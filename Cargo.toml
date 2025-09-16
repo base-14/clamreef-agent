@@ -1,0 +1,73 @@
+[package]
+name = "clamreef-agent"
+version = "0.1.0"
+edition = "2021"
+authors = ["ClamReef Contributors"]
+description = "A lightweight control plane agent for ClamAV with OpenTelemetry support"
+repository = "https://github.com/yourusername/clamreef-agent"
+license = "MIT"
+keywords = ["clamav", "antivirus", "monitoring", "opentelemetry", "agent"]
+categories = ["command-line-utilities", "monitoring"]
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+tokio-util = "0.7"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+serde_json = "1.0"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# CLI
+clap = { version = "4.4", features = ["derive", "env"] }
+
+# OpenTelemetry
+opentelemetry = { version = "0.21", features = ["metrics"] }
+opentelemetry-otlp = { version = "0.14", features = ["tls", "grpc-tonic", "metrics"] }
+opentelemetry_sdk = { version = "0.21", features = ["rt-tokio", "metrics"] }
+opentelemetry-semantic-conventions = "0.13"
+
+# Scheduling
+cron = "0.12"
+chrono = { version = "0.4", features = ["serde"] }
+
+# Utilities
+regex = "1.10"
+glob = "0.3"
+once_cell = "1.19"
+futures = "0.3"
+async-trait = "0.1"
+
+# System info
+sysinfo = "0.30"
+hostname = "0.3"
+
+# File watching for config reload
+notify = "6.1"
+
+[dev-dependencies]
+mockall = "0.12"
+tempfile = "3.8"
+pretty_assertions = "1.4"
+tokio-test = "0.4"
+wiremock = "0.5"
+rstest = "0.18"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+
+[profile.dev]
+opt-level = 0
+debug = true

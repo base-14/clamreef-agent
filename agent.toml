@@ -1,0 +1,21 @@
+[agent]
+version = "1.0.0"
+log_level = "info"
+
+[telemetry]
+endpoint = "http://localhost:4317"  # OTLP gRPC endpoint
+interval_seconds = 30
+timeout_seconds = 10
+
+[clamav]
+socket_path = "/opt/homebrew/var/run/clamav/clamd.sock"
+scan_timeout_seconds = 60
+
+# Test rule - scan a small directory for testing
+[[rules]]
+name = "test_scan"
+paths = ["/tmp/clamreef-test"]
+schedule = "0 * * * * *"  # Every minute for testing
+exclude_patterns = []
+recursive = true
+follow_symlinks = false
