@@ -127,7 +127,7 @@ fn get_serial_number() -> Option<String> {
     use std::process::Command;
 
     let output = Command::new("wmic")
-        .args(&["bios", "get", "serialnumber", "/value"])
+        .args(["bios", "get", "serialnumber", "/value"])
         .output()
         .ok()?;
 
