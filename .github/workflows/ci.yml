@@ -133,10 +133,4 @@ jobs:
       run: cargo install cargo-tarpaulin
 
     - name: Run coverage
-      run: cargo tarpaulin --verbose --all-features --workspace --timeout 120 --out xml
-
-    - name: Upload to codecov.io
-      uses: codecov/codecov-action@v3
-      with:
-        file: cobertura.xml
-        fail_ci_if_error: true
+      run: cargo tarpaulin --verbose --all-features --workspace --timeout 120 --fail-under 80
