@@ -1,5 +1,5 @@
 # Multi-stage build for ClamReef Agent
-FROM rust:1.75-slim-bullseye as builder
+FROM rust:1.89-slim-bullseye as builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
