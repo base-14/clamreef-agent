@@ -49,7 +49,7 @@ async-trait = "0.1"
 
 # System info
 sysinfo = "0.30"
-hostname = "0.3"
+hostname = "0.4"
 
 # File watching for config reload
 notify = "6.1"
