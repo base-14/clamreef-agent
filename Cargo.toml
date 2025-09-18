@@ -59,7 +59,7 @@ mockall = "0.12"
 tempfile = "3.8"
 pretty_assertions = "1.4"
 tokio-test = "0.4"
-wiremock = "0.5"
+wiremock = "0.6"
 rstest = "0.18"
 
 [profile.release]
