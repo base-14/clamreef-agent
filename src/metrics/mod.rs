@@ -522,12 +522,14 @@ mod tests {
         // Note: Duration tracking is in record_rule_execution, not record_scan_result
         for i in 0..150 {
             let duration = Duration::from_millis((i + 1) as u64);
-            collector.record_rule_execution(
-                "test_rule",
-                duration,
-                1, // files scanned
-                0  // threats found
-            ).await;
+            collector
+                .record_rule_execution(
+                    "test_rule",
+                    duration,
+                    1, // files scanned
+                    0, // threats found
+                )
+                .await;
         }
 
         // Verify that scan durations list is truncated to 100 items

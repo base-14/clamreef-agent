@@ -223,8 +223,8 @@ mod shellexpand {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::NamedTempFile;
     use std::io::Write;
+    use tempfile::NamedTempFile;
 
     const VALID_CONFIG_TOML: &str = r#"
 [agent]
@@ -317,7 +317,10 @@ schedule = "0 0 */6 * * *"
         assert_eq!(config.telemetry.timeout_seconds, 5);
         assert_eq!(config.telemetry.insecure, true);
 
-        assert_eq!(config.clamav.socket_path, Some("/var/run/clamav/clamd.ctl".to_string()));
+        assert_eq!(
+            config.clamav.socket_path,
+            Some("/var/run/clamav/clamd.ctl".to_string())
+        );
         assert_eq!(config.clamav.scan_timeout_seconds, 600);
 
         assert_eq!(config.rules.len(), 2);
@@ -348,7 +351,10 @@ schedule = "0 0 */6 * * *"
     async fn test_config_load_invalid_file() {
         let result = Config::load("/nonexistent/file.toml").await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Failed to read config file"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Failed to read config file"));
     }
 
     #[tokio::test]
@@ -359,7 +365,10 @@ schedule = "0 0 */6 * * *"
 
         let result = Config::load(temp_file.path()).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Failed to parse config"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Failed to parse config"));
     }
 
     #[tokio::test]
@@ -397,7 +406,10 @@ schedule = "0 0 */6 * * *"
 
         let result = config.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Either socket_path or tcp_host/tcp_port must be configured"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Either socket_path or tcp_host/tcp_port must be configured"));
     }
 
     #[test]
@@ -433,7 +445,10 @@ schedule = "0 0 */6 * * *"
 
         let result = config.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Invalid cron expression"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid cron expression"));
     }
 
     #[test]
@@ -469,7 +484,10 @@ schedule = "0 0 */6 * * *"
 
         let result = config.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Invalid max_file_size"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid max_file_size"));
     }
 
     #[test]
@@ -554,8 +572,8 @@ schedule = "0 0 */6 * * *"
 
     #[tokio::test]
     async fn test_load_from_default_locations_found() {
-        use tempfile::TempDir;
         use std::fs;
+        use tempfile::TempDir;
 
         // Create a temporary config directory that mimics real structure
         let temp_dir = TempDir::new().unwrap();
@@ -594,7 +612,7 @@ schedule = "0 0 */6 * * *"
         match result {
             Ok(_) => {
                 // Great! Config was loaded successfully
-            },
+            }
             Err(_) => {
                 // Also fine - no config found in default locations
             }
@@ -644,8 +662,8 @@ schedule = "0 0 */6 * * *"
 
     #[tokio::test]
     async fn test_load_with_validation_success() {
-        use tempfile::NamedTempFile;
         use std::fs;
+        use tempfile::NamedTempFile;
 
         let config_content = r#"
 [agent]
@@ -674,7 +692,10 @@ schedule = "0 0 */6 * * *"
 
         let config = result.unwrap();
         assert_eq!(config.agent.version, "1.0.0");
-        assert_eq!(config.agent.machine_name, Some("test-validation".to_string()));
+        assert_eq!(
+            config.agent.machine_name,
+            Some("test-validation".to_string())
+        );
     }
 
     #[tokio::test]

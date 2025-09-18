@@ -2,9 +2,9 @@ use async_trait::async_trait;
 use std::path::Path;
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::net::TcpStream;
 #[cfg(unix)]
 use tokio::net::UnixStream;
-use tokio::net::TcpStream;
 use tokio::time::timeout;
 use tracing::debug;
 
@@ -50,9 +50,9 @@ impl ClamAVClientImpl {
             #[cfg(unix)]
             ClamAVConnection::Unix { path } => self.send_unix_command(path, command).await,
             #[cfg(not(unix))]
-            ClamAVConnection::Unix { .. } => {
-                Err(Error::Connection("Unix sockets not supported on Windows".to_string()))
-            }
+            ClamAVConnection::Unix { .. } => Err(Error::Connection(
+                "Unix sockets not supported on Windows".to_string(),
+            )),
             ClamAVConnection::Tcp { host, port } => {
                 self.send_tcp_command(host, *port, command).await
             }
@@ -203,8 +203,7 @@ mod tests {
             host: "localhost".to_string(),
             port: 3310,
         };
-        let client = ClamAVClientImpl::new(connection)
-            .with_timeout(Duration::from_secs(10));
+        let client = ClamAVClientImpl::new(connection).with_timeout(Duration::from_secs(10));
 
         assert_eq!(client.timeout, Duration::from_secs(10));
     }
@@ -273,10 +272,7 @@ mod tests {
     #[tokio::test]
     async fn test_ping_failure() {
         let mut mock_client = MockClamAV::new();
-        mock_client
-            .expect_ping()
-            .times(1)
-            .returning(|| Ok(false));
+        mock_client.expect_ping().times(1).returning(|| Ok(false));
 
         let result = mock_client.ping().await;
         assert!(result.is_ok());
@@ -316,10 +312,7 @@ mod tests {
                 idle: 2,
                 max: 10,
             },
-            queue: super::super::types::QueueStats {
-                items: 0,
-                max: 100,
-            },
+            queue: super::super::types::QueueStats { items: 0, max: 100 },
             mem_stats: super::super::types::MemoryStats {
                 heap: 1.5,
                 mmap: 0.0,
@@ -393,7 +386,10 @@ mod tests {
         let result = mock_client.scan(temp_file.path()).await;
         assert!(result.is_ok());
         let scan_result = result.unwrap();
-        assert_eq!(scan_result.status, super::super::types::ScanStatus::Infected);
+        assert_eq!(
+            scan_result.status,
+            super::super::types::ScanStatus::Infected
+        );
         assert_eq!(scan_result.threat, Some("EICAR-Test-File".to_string()));
     }
 
@@ -567,8 +563,7 @@ mod tests {
             path: "/var/run/clamav/clamd.ctl".to_string(),
         };
 
-        let client = ClamAVClientImpl::new(connection)
-            .with_timeout(Duration::from_secs(5));
+        let client = ClamAVClientImpl::new(connection).with_timeout(Duration::from_secs(5));
 
         assert_eq!(client.timeout, Duration::from_secs(5));
     }

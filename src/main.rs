@@ -418,13 +418,13 @@ mod tests {
             host: "192.0.2.1".to_string(), // RFC5737 test address
             port: 12345,
         };
-        let client = Arc::new(ClamAVClientImpl::new(connection)
-            .with_timeout(std::time::Duration::from_millis(100)));
+        let client = Arc::new(
+            ClamAVClientImpl::new(connection).with_timeout(std::time::Duration::from_millis(100)),
+        );
 
         let result = test_clamav_connection(&client).await;
         assert!(result.is_err());
     }
-
 
     #[tokio::test]
     async fn test_get_clamav_version_info_error() {
@@ -433,14 +433,14 @@ mod tests {
             host: "192.0.2.1".to_string(), // RFC5737 test address
             port: 12345,
         };
-        let client = Arc::new(ClamAVClientImpl::new(connection)
-            .with_timeout(std::time::Duration::from_millis(100)));
+        let client = Arc::new(
+            ClamAVClientImpl::new(connection).with_timeout(std::time::Duration::from_millis(100)),
+        );
 
         // This should not fail even if version request fails
         let result = get_clamav_version_info(&client).await;
         assert!(result.is_ok());
     }
-
 
     #[tokio::test]
     async fn test_load_config_from_args_with_path() {
@@ -514,12 +514,15 @@ schedule = "0 0 * * * *"
         };
 
         let metrics = Arc::new(MetricsCollector::new());
-        let exporter = Arc::new(TelemetryExporter::new(
-            telemetry_config,
-            metrics,
-            "test".to_string(),
-            "1.0.0".to_string(),
-        ).unwrap());
+        let exporter = Arc::new(
+            TelemetryExporter::new(
+                telemetry_config,
+                metrics,
+                "test".to_string(),
+                "1.0.0".to_string(),
+            )
+            .unwrap(),
+        );
 
         // Create dummy handles
         let telemetry_handle = tokio::spawn(async {
@@ -543,7 +546,10 @@ schedule = "0 0 * * * *"
         };
 
         assert!(args.config_path.is_some());
-        assert_eq!(args.config_path.unwrap(), PathBuf::from("/custom/config.toml"));
+        assert_eq!(
+            args.config_path.unwrap(),
+            PathBuf::from("/custom/config.toml")
+        );
         assert_eq!(args.log_level, "debug");
         assert!(args.dry_run);
     }

@@ -168,7 +168,9 @@ mod tests {
         let collector = create_test_metrics_collector();
 
         // Update some metrics in the collector for testing
-        collector.record_rule_execution("test_rule", Duration::from_secs(10), 5, 0).await;
+        collector
+            .record_rule_execution("test_rule", Duration::from_secs(10), 5, 0)
+            .await;
         collector.update_clamav_version("0.103.8").await;
 
         let exporter = TelemetryExporter::new(
@@ -176,7 +178,8 @@ mod tests {
             collector,
             "test-machine".to_string(),
             "1.0.0".to_string(),
-        ).unwrap();
+        )
+        .unwrap();
 
         // Test export_metrics - this should not fail even though it just logs
         let result = exporter.export_metrics().await;
@@ -203,7 +206,8 @@ mod tests {
             collector,
             "test-machine".to_string(),
             "1.0.0".to_string(),
-        ).unwrap();
+        )
+        .unwrap();
 
         let result = exporter.export_metrics().await;
         assert!(result.is_ok());
@@ -229,7 +233,8 @@ mod tests {
             collector,
             "test-machine".to_string(),
             "1.0.0".to_string(),
-        ).unwrap();
+        )
+        .unwrap();
 
         let result = exporter.export_metrics().await;
         assert!(result.is_ok());
@@ -255,7 +260,8 @@ mod tests {
             collector,
             "test-machine".to_string(),
             "1.0.0".to_string(),
-        ).unwrap();
+        )
+        .unwrap();
 
         let result = exporter.export_metrics().await;
         assert!(result.is_ok());
@@ -271,7 +277,8 @@ mod tests {
             collector,
             "test-machine".to_string(),
             "1.0.0".to_string(),
-        ).unwrap();
+        )
+        .unwrap();
 
         let result = exporter.shutdown().await;
         assert!(result.is_ok());
@@ -287,12 +294,15 @@ mod tests {
         };
         let collector = create_test_metrics_collector();
 
-        let exporter = Arc::new(TelemetryExporter::new(
-            config,
-            collector,
-            "test-machine".to_string(),
-            "1.0.0".to_string(),
-        ).unwrap());
+        let exporter = Arc::new(
+            TelemetryExporter::new(
+                config,
+                collector,
+                "test-machine".to_string(),
+                "1.0.0".to_string(),
+            )
+            .unwrap(),
+        );
 
         // Start the export loop but timeout quickly
         let export_task = exporter.clone().start_export_loop();
@@ -342,14 +352,17 @@ mod tests {
         collector.record_scan_result(&scan_result_infected).await;
 
         collector.update_clamav_version("0.103.8").await;
-        collector.record_rule_execution("test_rule", std::time::Duration::from_secs(5), 2, 1).await;
+        collector
+            .record_rule_execution("test_rule", std::time::Duration::from_secs(5), 2, 1)
+            .await;
 
         let exporter = TelemetryExporter::new(
             config,
             collector,
             "test-machine".to_string(),
             "1.0.0".to_string(),
-        ).unwrap();
+        )
+        .unwrap();
 
         // Test the export_metrics function directly
         let result = exporter.export_metrics().await;
@@ -397,7 +410,8 @@ mod tests {
             collector,
             "comprehensive-test-machine".to_string(),
             "2.0.0".to_string(),
-        ).unwrap();
+        )
+        .unwrap();
 
         // This should exercise all the logging paths in export_metrics
         let result = exporter.export_metrics().await;
@@ -410,9 +424,15 @@ mod tests {
         let collector = create_test_metrics_collector();
 
         // Add comprehensive metrics to hit all logging paths
-        collector.record_rule_execution("test_rule_1", std::time::Duration::from_millis(100), 5, 2).await;
-        collector.record_rule_execution("test_rule_2", std::time::Duration::from_millis(200), 3, 0).await;
-        collector.record_rule_execution("test_rule_3", std::time::Duration::from_millis(50), 8, 1).await;
+        collector
+            .record_rule_execution("test_rule_1", std::time::Duration::from_millis(100), 5, 2)
+            .await;
+        collector
+            .record_rule_execution("test_rule_2", std::time::Duration::from_millis(200), 3, 0)
+            .await;
+        collector
+            .record_rule_execution("test_rule_3", std::time::Duration::from_millis(50), 8, 1)
+            .await;
 
         // Add different types of scan results
         let results = vec![
@@ -450,7 +470,8 @@ mod tests {
             collector,
             "comprehensive-coverage-machine".to_string(),
             "1.2.0".to_string(),
-        ).unwrap();
+        )
+        .unwrap();
 
         // This should exercise comprehensive logging in export_metrics including lines 51, 61
         let result = exporter.export_metrics().await;
@@ -476,14 +497,22 @@ mod tests {
         collector.record_scan_result(&infected_result).await;
 
         // Update realtime protection status to exercise line 87 conditional
-        collector.record_rule_execution("protection_rule", std::time::Duration::from_millis(50), 1, 1).await;
+        collector
+            .record_rule_execution(
+                "protection_rule",
+                std::time::Duration::from_millis(50),
+                1,
+                1,
+            )
+            .await;
 
         let exporter = TelemetryExporter::new(
             config,
             collector,
             "protection-test-machine".to_string(),
             "1.0.1".to_string(),
-        ).unwrap();
+        )
+        .unwrap();
 
         // This should exercise protection logging lines 83-87
         let result = exporter.export_metrics().await;

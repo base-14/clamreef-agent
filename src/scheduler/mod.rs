@@ -470,7 +470,9 @@ mod tests {
         let large_file = temp_dir.path().join("large.txt");
 
         fs::write(&small_file, "small").await.unwrap();
-        fs::write(&large_file, "x".repeat(50 * 1024 * 1024)).await.unwrap(); // 50MB
+        fs::write(&large_file, "x".repeat(50 * 1024 * 1024))
+            .await
+            .unwrap(); // 50MB
 
         let mut rule = create_test_rule();
         rule.max_file_size = Some("10MB".to_string());
@@ -571,7 +573,10 @@ mod tests {
         let metrics = create_test_metrics();
         let scheduler = Scheduler::new(vec![rule.clone()], client, metrics);
 
-        let results = scheduler.scan_directory(temp_dir.path(), &rule).await.unwrap();
+        let results = scheduler
+            .scan_directory(temp_dir.path(), &rule)
+            .await
+            .unwrap();
         assert_eq!(results.len(), 1);
         assert!(results[0].path.ends_with("good.txt"));
     }
@@ -639,7 +644,10 @@ mod tests {
         let metrics = create_test_metrics();
         let scheduler = Scheduler::new(vec![rule.clone()], client, metrics);
 
-        let results = scheduler.scan_directory(temp_dir.path(), &rule).await.unwrap();
+        let results = scheduler
+            .scan_directory(temp_dir.path(), &rule)
+            .await
+            .unwrap();
         assert_eq!(results.len(), 2);
     }
 

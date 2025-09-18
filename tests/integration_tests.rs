@@ -2,10 +2,7 @@ use tempfile::NamedTempFile;
 use tokio::fs;
 
 use clamreef_agent::{
-    config::Config,
-    error::Error,
-    metrics::MetricsCollector,
-    telemetry::TelemetryExporter,
+    config::Config, error::Error, metrics::MetricsCollector, telemetry::TelemetryExporter,
 };
 
 #[tokio::test]
@@ -42,7 +39,10 @@ max_file_size = "10MB"
     let config = Config::load(temp_file.path()).await.unwrap();
 
     assert_eq!(config.agent.version, "1.0.0");
-    assert_eq!(config.agent.machine_name, Some("test-integration".to_string()));
+    assert_eq!(
+        config.agent.machine_name,
+        Some("test-integration".to_string())
+    );
     assert_eq!(config.rules.len(), 1);
     assert_eq!(config.rules[0].name, "integration_test");
     assert!(config.clamav.socket_path.is_some());
@@ -204,7 +204,8 @@ recursive = true
         metrics.clone(),
         config.get_machine_name(),
         "1.0.0".to_string(),
-    ).unwrap();
+    )
+    .unwrap();
 
     // Test that shutdown works
     let shutdown_result = telemetry_exporter.shutdown().await;
