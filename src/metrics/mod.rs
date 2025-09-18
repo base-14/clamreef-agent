@@ -41,7 +41,6 @@ pub struct HostMetrics {
     pub clamreef_agent_version: String,
 }
 
-
 impl HostMetrics {
     pub fn collect() -> Self {
         let mut sys = System::new_all();

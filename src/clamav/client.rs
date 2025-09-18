@@ -61,10 +61,7 @@ impl ClamAVClientImpl {
         debug!("Sending command to ClamAV: {}", command);
 
         let cmd = format!("z{}\0", command);
-        stream
-            .write_all(cmd.as_bytes())
-            .await
-            .map_err(Error::Io)?;
+        stream.write_all(cmd.as_bytes()).await.map_err(Error::Io)?;
 
         let mut response = Vec::new();
         let mut reader = BufReader::new(stream);
@@ -93,10 +90,7 @@ impl ClamAVClientImpl {
         debug!("Sending command to ClamAV: {}", command);
 
         let cmd = format!("z{}\0", command);
-        stream
-            .write_all(cmd.as_bytes())
-            .await
-            .map_err(Error::Io)?;
+        stream.write_all(cmd.as_bytes()).await.map_err(Error::Io)?;
 
         let mut response = Vec::new();
         let mut reader = BufReader::new(stream);
