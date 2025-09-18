@@ -114,7 +114,8 @@ impl Config {
     pub fn validate(&self) -> Result<()> {
         // Validate ClamAV connection
         if self.clamav.socket_path.is_none()
-            && (self.clamav.tcp_host.is_none() || self.clamav.tcp_port.is_none()) {
+            && (self.clamav.tcp_host.is_none() || self.clamav.tcp_port.is_none())
+        {
             return Err(Error::Config(
                 "Either socket_path or tcp_host/tcp_port must be configured".to_string(),
             ));
@@ -123,8 +124,12 @@ impl Config {
         // Validate rules
         for rule in &self.rules {
             // Validate cron expression
-            cron::Schedule::from_str(&rule.schedule)
-                .map_err(|e| Error::Config(format!("Invalid cron expression '{}': {}", rule.schedule, e)))?;
+            cron::Schedule::from_str(&rule.schedule).map_err(|e| {
+                Error::Config(format!(
+                    "Invalid cron expression '{}': {}",
+                    rule.schedule, e
+                ))
+            })?;
 
             // Validate paths exist
             for path in &rule.paths {
@@ -137,8 +142,12 @@ impl Config {
 
             // Validate max_file_size format
             if let Some(size) = &rule.max_file_size {
-                parse_size(size)
-                    .map_err(|_| Error::Config(format!("Invalid max_file_size '{}' in rule '{}'", size, rule.name)))?;
+                parse_size(size).map_err(|_| {
+                    Error::Config(format!(
+                        "Invalid max_file_size '{}' in rule '{}'",
+                        size, rule.name
+                    ))
+                })?;
             }
         }
 
@@ -146,15 +155,12 @@ impl Config {
     }
 
     pub fn get_machine_name(&self) -> String {
-        self.agent
-            .machine_name
-            .clone()
-            .unwrap_or_else(|| {
-                hostname::get()
-                    .ok()
-                    .and_then(|s| s.into_string().ok())
-                    .unwrap_or_else(|| "unknown".to_string())
-            })
+        self.agent.machine_name.clone().unwrap_or_else(|| {
+            hostname::get()
+                .ok()
+                .and_then(|s| s.into_string().ok())
+                .unwrap_or_else(|| "unknown".to_string())
+        })
     }
 }
 
@@ -172,7 +178,8 @@ fn parse_size(size: &str) -> Result<u64> {
         return Err(Error::Config(format!("Invalid size format: {}", size)));
     };
 
-    let num: u64 = num_str.parse()
+    let num: u64 = num_str
+        .parse()
         .map_err(|_| Error::Config(format!("Invalid number in size: {}", size)))?;
 
     Ok(num * unit)

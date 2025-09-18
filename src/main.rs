@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::signal;
 use tracing::{error, info, warn, Level};
-use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use clamreef_agent::{
     clamav::{ClamAVClient, ClamAVClientImpl, ClamAVConnection},
@@ -46,15 +46,21 @@ async fn main() -> Result<()> {
 
     // Create ClamAV client
     let clamav_connection = if let Some(socket_path) = &config.clamav.socket_path {
-        ClamAVConnection::Unix { path: socket_path.clone() }
+        ClamAVConnection::Unix {
+            path: socket_path.clone(),
+        }
     } else if let (Some(host), Some(port)) = (&config.clamav.tcp_host, config.clamav.tcp_port) {
-        ClamAVConnection::Tcp { host: host.clone(), port }
+        ClamAVConnection::Tcp {
+            host: host.clone(),
+            port,
+        }
     } else {
         return Err(Error::Config("No ClamAV connection configured".to_string()));
     };
 
-    let clamav_client = Arc::new(ClamAVClientImpl::new(clamav_connection)
-        .with_timeout(std::time::Duration::from_secs(config.clamav.scan_timeout_seconds)));
+    let clamav_client = Arc::new(ClamAVClientImpl::new(clamav_connection).with_timeout(
+        std::time::Duration::from_secs(config.clamav.scan_timeout_seconds),
+    ));
 
     // Test ClamAV connection
     info!("Testing ClamAV connection...");
@@ -73,7 +79,10 @@ async fn main() -> Result<()> {
     // Get ClamAV version info
     match clamav_client.version().await {
         Ok(version) => {
-            info!("ClamAV version: {} (database: {})", version.clamav, version.database);
+            info!(
+                "ClamAV version: {} (database: {})",
+                version.clamav, version.database
+            );
         }
         Err(e) => {
             warn!("Could not get ClamAV version: {}", e);
@@ -116,7 +125,10 @@ async fn main() -> Result<()> {
         })
     };
 
-    info!("ClamReef Agent started successfully with {} rules", config.rules.len());
+    info!(
+        "ClamReef Agent started successfully with {} rules",
+        config.rules.len()
+    );
 
     // Wait for shutdown signal
     match signal::ctrl_c().await {

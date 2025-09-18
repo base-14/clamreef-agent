@@ -102,9 +102,9 @@ jobs:
       run: cargo audit
 
     - name: Install cargo-deny
-      run: cargo install cargo-deny
+      run: cargo install cargo-deny --locked
 
-    - name: Run cargo-deny
+    - name: Run cargo-deny check
       run: cargo deny check
 
   coverage:

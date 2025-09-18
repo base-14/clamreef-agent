@@ -1,10 +1,10 @@
 use chrono::Utc;
 use regex::Regex;
 
-use crate::error::{Error, Result};
 use super::types::{
     DatabaseInfo, MemoryStats, QueueStats, ScanResult, ScanStatus, Stats, ThreadStats, Version,
 };
+use crate::error::{Error, Result};
 
 pub struct Parser;
 
@@ -13,11 +13,15 @@ impl Parser {
         // Example: ClamAV 0.103.8/26827/Mon Mar 13 08:20:48 2023
         let parts: Vec<&str> = response.trim().split('/').collect();
         if parts.len() < 3 {
-            return Err(Error::Parse(format!("Invalid version response: {}", response)));
+            return Err(Error::Parse(format!(
+                "Invalid version response: {}",
+                response
+            )));
         }
 
         let clamav = parts[0].replace("ClamAV ", "");
-        let database = parts[1].parse::<u32>()
+        let database = parts[1]
+            .parse::<u32>()
             .map_err(|_| Error::Parse(format!("Invalid database version: {}", parts[1])))?;
         let database_date = parts[2].to_string();
 
@@ -31,9 +35,17 @@ impl Parser {
     pub fn parse_stats(response: &str) -> Result<Stats> {
         let mut pools = 0;
         let mut state = String::new();
-        let mut threads = ThreadStats { live: 0, idle: 0, max: 0 };
+        let mut threads = ThreadStats {
+            live: 0,
+            idle: 0,
+            max: 0,
+        };
         let mut queue = QueueStats { items: 0, max: 0 };
-        let mut mem_stats = MemoryStats { heap: 0.0, mmap: 0.0, used: 0.0 };
+        let mut mem_stats = MemoryStats {
+            heap: 0.0,
+            mmap: 0.0,
+            used: 0.0,
+        };
         let mut database = DatabaseInfo {
             version: 0,
             sigs: 0,
@@ -124,7 +136,10 @@ impl Parser {
             let error_msg = response.replace("ERROR: ", "");
             (ScanStatus::Error(error_msg.clone()), None)
         } else {
-            (ScanStatus::Error(format!("Unexpected response: {}", response)), None)
+            (
+                ScanStatus::Error(format!("Unexpected response: {}", response)),
+                None,
+            )
         };
 
         Ok(ScanResult {

@@ -6,9 +6,9 @@ use tokio::net::{TcpStream, UnixStream};
 use tokio::time::timeout;
 use tracing::debug;
 
-use crate::error::{Error, Result};
 use super::parser::Parser;
 use super::types::{ScanResult, Stats, Version};
+use crate::error::{Error, Result};
 
 #[derive(Debug, Clone)]
 pub enum ClamAVConnection {
@@ -45,9 +45,7 @@ impl ClamAVClientImpl {
 
     async fn send_command(&self, command: &str) -> Result<String> {
         match &self.connection {
-            ClamAVConnection::Unix { path } => {
-                self.send_unix_command(path, command).await
-            }
+            ClamAVConnection::Unix { path } => self.send_unix_command(path, command).await,
             ClamAVConnection::Tcp { host, port } => {
                 self.send_tcp_command(host, *port, command).await
             }
@@ -55,26 +53,24 @@ impl ClamAVClientImpl {
     }
 
     async fn send_unix_command(&self, path: &str, command: &str) -> Result<String> {
-        let mut stream = timeout(
-            self.timeout,
-            UnixStream::connect(path)
-        ).await
+        let mut stream = timeout(self.timeout, UnixStream::connect(path))
+            .await
             .map_err(|_| Error::Timeout(format!("Connection to {} timed out", path)))?
             .map_err(|e| Error::Connection(format!("Failed to connect to {}: {}", path, e)))?;
 
         debug!("Sending command to ClamAV: {}", command);
 
         let cmd = format!("z{}\0", command);
-        stream.write_all(cmd.as_bytes()).await
+        stream
+            .write_all(cmd.as_bytes())
+            .await
             .map_err(|e| Error::Io(e))?;
 
         let mut response = Vec::new();
         let mut reader = BufReader::new(stream);
 
-        timeout(
-            self.timeout,
-            reader.read_until(b'\0', &mut response)
-        ).await
+        timeout(self.timeout, reader.read_until(b'\0', &mut response))
+            .await
             .map_err(|_| Error::Timeout("Read response timed out".to_string()))?
             .map_err(|e| Error::Io(e))?;
 
@@ -89,26 +85,24 @@ impl ClamAVClientImpl {
 
     async fn send_tcp_command(&self, host: &str, port: u16, command: &str) -> Result<String> {
         let addr = format!("{}:{}", host, port);
-        let mut stream = timeout(
-            self.timeout,
-            TcpStream::connect(&addr)
-        ).await
+        let mut stream = timeout(self.timeout, TcpStream::connect(&addr))
+            .await
             .map_err(|_| Error::Timeout(format!("Connection to {} timed out", addr)))?
             .map_err(|e| Error::Connection(format!("Failed to connect to {}: {}", addr, e)))?;
 
         debug!("Sending command to ClamAV: {}", command);
 
         let cmd = format!("z{}\0", command);
-        stream.write_all(cmd.as_bytes()).await
+        stream
+            .write_all(cmd.as_bytes())
+            .await
             .map_err(|e| Error::Io(e))?;
 
         let mut response = Vec::new();
         let mut reader = BufReader::new(stream);
 
-        timeout(
-            self.timeout,
-            reader.read_until(b'\0', &mut response)
-        ).await
+        timeout(self.timeout, reader.read_until(b'\0', &mut response))
+            .await
             .map_err(|_| Error::Timeout("Read response timed out".to_string()))?
             .map_err(|e| Error::Io(e))?;
 
@@ -155,7 +149,10 @@ impl ClamAVClient for ClamAVClientImpl {
         if response.trim() == "RELOADING" {
             Ok(())
         } else {
-            Err(Error::ClamAV(format!("Unexpected reload response: {}", response)))
+            Err(Error::ClamAV(format!(
+                "Unexpected reload response: {}",
+                response
+            )))
         }
     }
 }

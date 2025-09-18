@@ -65,12 +65,18 @@ impl TelemetryExporter {
         );
 
         // Threat response metrics
-        let last_threat = metrics.clamreef_last_threat_timestamp
-            .map(|ts| format!("{} seconds ago",
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs() - ts))
+        let last_threat = metrics
+            .clamreef_last_threat_timestamp
+            .map(|ts| {
+                format!(
+                    "{} seconds ago",
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs()
+                        - ts
+                )
+            })
             .unwrap_or_else(|| "Never".to_string());
 
         info!(
@@ -88,7 +94,10 @@ impl TelemetryExporter {
             host_metrics.clamreef_os_name,
             host_metrics.clamreef_os_version,
             host_metrics.clamreef_kernel_version,
-            host_metrics.clamreef_serial_number.as_ref().unwrap_or(&"N/A".to_string())
+            host_metrics
+                .clamreef_serial_number
+                .as_ref()
+                .unwrap_or(&"N/A".to_string())
         );
 
         // User and agent info

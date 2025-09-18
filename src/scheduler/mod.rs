@@ -129,7 +129,8 @@ impl Scheduler {
                         total_scanned += 1;
                         if let ScanStatus::Infected = result.status {
                             threats_found += 1;
-                            warn!("Threat found: {} in {}",
+                            warn!(
+                                "Threat found: {} in {}",
                                 result.threat.as_ref().unwrap_or(&"Unknown".to_string()),
                                 result.path
                             );
@@ -152,7 +153,9 @@ impl Scheduler {
         );
 
         // Record rule execution metrics
-        self.metrics.record_rule_execution(&rule.name, duration, total_scanned, threats_found).await;
+        self.metrics
+            .record_rule_execution(&rule.name, duration, total_scanned, threats_found)
+            .await;
 
         // Remove from active scans
         {
@@ -261,7 +264,8 @@ fn parse_size(size: &str) -> Result<u64> {
         return Err(Error::Config(format!("Invalid size format: {}", size)));
     };
 
-    let num: u64 = num_str.parse()
+    let num: u64 = num_str
+        .parse()
         .map_err(|_| Error::Config(format!("Invalid number in size: {}", size)))?;
 
     Ok(num * unit)

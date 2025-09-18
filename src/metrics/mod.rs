@@ -1,8 +1,8 @@
+use serde_json;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::RwLock;
-use serde_json;
 use sysinfo::{System, Users};
+use tokio::sync::RwLock;
 
 use crate::clamav::{ScanResult, ScanStatus, Stats};
 
@@ -81,7 +81,15 @@ impl HostMetrics {
         let kernel_version = System::kernel_version().unwrap_or_else(|| "Unknown".to_string());
 
         // System users to filter out
-        const SYSTEM_USERS: &[&str] = &["root", "_mbsetupuser", "daemon", "nobody", "_spotlight", "_locationd", "_windowserver"];
+        const SYSTEM_USERS: &[&str] = &[
+            "root",
+            "_mbsetupuser",
+            "daemon",
+            "nobody",
+            "_spotlight",
+            "_locationd",
+            "_windowserver",
+        ];
 
         let users_manager = Users::new_with_refreshed_list();
         let users: Vec<String> = users_manager
@@ -227,7 +235,7 @@ impl MetricsCollector {
                 std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
-                    .as_secs()
+                    .as_secs(),
             );
         }
 
@@ -279,8 +287,8 @@ impl MetricsCollector {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::clamav::types::{DatabaseInfo, MemoryStats, QueueStats, ThreadStats};
     use crate::clamav::{ScanResult, ScanStatus, Stats};
-    use crate::clamav::types::{ThreadStats, QueueStats, MemoryStats, DatabaseInfo};
     use chrono::Utc;
     use std::time::Duration;
 
@@ -382,12 +390,9 @@ mod tests {
     async fn test_record_rule_execution() {
         let collector = MetricsCollector::new();
 
-        collector.record_rule_execution(
-            "test_rule",
-            Duration::from_millis(500),
-            10,
-            2,
-        ).await;
+        collector
+            .record_rule_execution("test_rule", Duration::from_millis(500), 10, 2)
+            .await;
 
         let metrics = collector.get_metrics().await;
         assert_eq!(metrics.clamreef_rule_executions_total, 1);
@@ -404,9 +409,15 @@ mod tests {
         let collector = MetricsCollector::new();
 
         // Record multiple scans with different durations
-        collector.record_rule_execution("rule1", Duration::from_millis(100), 5, 0).await;
-        collector.record_rule_execution("rule2", Duration::from_millis(200), 3, 0).await;
-        collector.record_rule_execution("rule3", Duration::from_millis(300), 2, 0).await;
+        collector
+            .record_rule_execution("rule1", Duration::from_millis(100), 5, 0)
+            .await;
+        collector
+            .record_rule_execution("rule2", Duration::from_millis(200), 3, 0)
+            .await;
+        collector
+            .record_rule_execution("rule3", Duration::from_millis(300), 2, 0)
+            .await;
 
         let metrics = collector.get_metrics().await;
         assert_eq!(metrics.clamreef_last_scan_duration_ms, 300);
@@ -422,9 +433,17 @@ mod tests {
         let stats = Stats {
             pools: 1,
             state: "READY".to_string(),
-            threads: ThreadStats { live: 1, idle: 0, max: 10 },
+            threads: ThreadStats {
+                live: 1,
+                idle: 0,
+                max: 10,
+            },
             queue: QueueStats { items: 0, max: 100 },
-            mem_stats: MemoryStats { heap: 1.5, mmap: 0.0, used: 1.5 },
+            mem_stats: MemoryStats {
+                heap: 1.5,
+                mmap: 0.0,
+                used: 1.5,
+            },
             database: DatabaseInfo {
                 version: 27763,
                 sigs: 8654321,
@@ -462,8 +481,13 @@ mod tests {
 
         // Check that system users are filtered out
         assert!(!host_metrics.clamreef_users.contains(&"root".to_string()));
-        assert!(!host_metrics.clamreef_users.contains(&"_mbsetupuser".to_string()));
-        assert!(!host_metrics.clamreef_users.iter().any(|u| u.starts_with('_')));
+        assert!(!host_metrics
+            .clamreef_users
+            .contains(&"_mbsetupuser".to_string()));
+        assert!(!host_metrics
+            .clamreef_users
+            .iter()
+            .any(|u| u.starts_with('_')));
     }
 
     #[tokio::test]
