@@ -324,7 +324,7 @@ mod tests {
         assert_eq!(config.endpoint, "https://otlp.example.com:4317");
         assert_eq!(config.interval_seconds, 30);
         assert_eq!(config.timeout_seconds, 15);
-        assert_eq!(config.insecure, false);
+        assert!(!config.insecure);
     }
 
     #[tokio::test]

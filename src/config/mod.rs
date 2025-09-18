@@ -280,7 +280,7 @@ schedule = "0 0 */6 * * *"
         assert_eq!(default_interval(), 60);
         assert_eq!(default_timeout(), 10);
         assert_eq!(default_scan_timeout(), 300);
-        assert_eq!(default_recursive(), true);
+        assert!(default_recursive());
     }
 
     #[test]
@@ -315,7 +315,7 @@ schedule = "0 0 */6 * * *"
         assert_eq!(config.telemetry.endpoint, "http://localhost:4317");
         assert_eq!(config.telemetry.interval_seconds, 30);
         assert_eq!(config.telemetry.timeout_seconds, 5);
-        assert_eq!(config.telemetry.insecure, true);
+        assert!(config.telemetry.insecure);
 
         assert_eq!(
             config.clamav.socket_path,
@@ -330,8 +330,8 @@ schedule = "0 0 */6 * * *"
         assert_eq!(rule.schedule, "0 0 */6 * * *");
         assert_eq!(rule.exclude_patterns, vec!["*.log", "*.tmp"]);
         assert_eq!(rule.max_file_size, Some("10MB".to_string()));
-        assert_eq!(rule.recursive, true);
-        assert_eq!(rule.follow_symlinks, false);
+        assert!(rule.recursive);
+        assert!(!rule.follow_symlinks);
     }
 
     #[tokio::test]
