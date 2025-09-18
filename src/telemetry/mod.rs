@@ -124,3 +124,283 @@ impl TelemetryExporter {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+    use tokio::time::timeout;
+
+    fn create_test_config() -> TelemetryConfig {
+        TelemetryConfig {
+            endpoint: "http://localhost:4317".to_string(),
+            interval_seconds: 1,
+            timeout_seconds: 5,
+            insecure: true,
+        }
+    }
+
+    fn create_test_metrics_collector() -> Arc<MetricsCollector> {
+        Arc::new(MetricsCollector::new())
+    }
+
+    #[tokio::test]
+    async fn test_telemetry_exporter_new() {
+        let config = create_test_config();
+        let collector = create_test_metrics_collector();
+
+        let exporter = TelemetryExporter::new(
+            config.clone(),
+            collector.clone(),
+            "test-machine".to_string(),
+            "1.0.0".to_string(),
+        );
+
+        assert!(exporter.is_ok());
+        let exporter = exporter.unwrap();
+        assert_eq!(exporter.config.endpoint, "http://localhost:4317");
+        assert_eq!(exporter.config.interval_seconds, 1);
+    }
+
+    #[tokio::test]
+    async fn test_export_metrics() {
+        let config = create_test_config();
+        let collector = create_test_metrics_collector();
+
+        // Update some metrics in the collector for testing
+        collector.record_rule_execution("test_rule", Duration::from_secs(10), 5, 0).await;
+        collector.update_clamav_version("0.103.8").await;
+
+        let exporter = TelemetryExporter::new(
+            config,
+            collector,
+            "test-machine".to_string(),
+            "1.0.0".to_string(),
+        ).unwrap();
+
+        // Test export_metrics - this should not fail even though it just logs
+        let result = exporter.export_metrics().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_export_metrics_with_threats() {
+        let config = create_test_config();
+        let collector = create_test_metrics_collector();
+
+        // Simulate some scanning activity
+        let scan_result = crate::clamav::types::ScanResult {
+            path: "/test/file".to_string(),
+            status: crate::clamav::types::ScanStatus::Infected,
+            scan_time: chrono::Utc::now(),
+            duration_ms: 150,
+            threat: Some("TestVirus".to_string()),
+        };
+        collector.record_scan_result(&scan_result).await;
+
+        let exporter = TelemetryExporter::new(
+            config,
+            collector,
+            "test-machine".to_string(),
+            "1.0.0".to_string(),
+        ).unwrap();
+
+        let result = exporter.export_metrics().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_export_metrics_clean_scan() {
+        let config = create_test_config();
+        let collector = create_test_metrics_collector();
+
+        // Simulate clean scan
+        let scan_result = crate::clamav::types::ScanResult {
+            path: "/test/clean_file".to_string(),
+            status: crate::clamav::types::ScanStatus::Clean,
+            scan_time: chrono::Utc::now(),
+            duration_ms: 75,
+            threat: None,
+        };
+        collector.record_scan_result(&scan_result).await;
+
+        let exporter = TelemetryExporter::new(
+            config,
+            collector,
+            "test-machine".to_string(),
+            "1.0.0".to_string(),
+        ).unwrap();
+
+        let result = exporter.export_metrics().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_export_metrics_error_scan() {
+        let config = create_test_config();
+        let collector = create_test_metrics_collector();
+
+        // Simulate scan error
+        let scan_result = crate::clamav::types::ScanResult {
+            path: "/test/error_file".to_string(),
+            status: crate::clamav::types::ScanStatus::Error("Access denied".to_string()),
+            scan_time: chrono::Utc::now(),
+            duration_ms: 10,
+            threat: None,
+        };
+        collector.record_scan_result(&scan_result).await;
+
+        let exporter = TelemetryExporter::new(
+            config,
+            collector,
+            "test-machine".to_string(),
+            "1.0.0".to_string(),
+        ).unwrap();
+
+        let result = exporter.export_metrics().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_shutdown() {
+        let config = create_test_config();
+        let collector = create_test_metrics_collector();
+
+        let exporter = TelemetryExporter::new(
+            config,
+            collector,
+            "test-machine".to_string(),
+            "1.0.0".to_string(),
+        ).unwrap();
+
+        let result = exporter.shutdown().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_export_loop_terminates() {
+        let config = TelemetryConfig {
+            endpoint: "http://localhost:4317".to_string(),
+            interval_seconds: 100, // Long interval
+            timeout_seconds: 5,
+            insecure: true,
+        };
+        let collector = create_test_metrics_collector();
+
+        let exporter = Arc::new(TelemetryExporter::new(
+            config,
+            collector,
+            "test-machine".to_string(),
+            "1.0.0".to_string(),
+        ).unwrap());
+
+        // Start the export loop but timeout quickly
+        let export_task = exporter.clone().start_export_loop();
+        let result = timeout(Duration::from_millis(100), export_task).await;
+
+        // Should timeout (task runs indefinitely)
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_telemetry_config_fields() {
+        let config = TelemetryConfig {
+            endpoint: "https://otlp.example.com:4317".to_string(),
+            interval_seconds: 30,
+            timeout_seconds: 15,
+            insecure: false,
+        };
+
+        assert_eq!(config.endpoint, "https://otlp.example.com:4317");
+        assert_eq!(config.interval_seconds, 30);
+        assert_eq!(config.timeout_seconds, 15);
+        assert_eq!(config.insecure, false);
+    }
+
+    #[tokio::test]
+    async fn test_export_loop_with_actual_metrics() {
+        let config = create_test_config();
+        let collector = create_test_metrics_collector();
+
+        // Add some metrics first
+        let scan_result_clean = crate::clamav::types::ScanResult {
+            path: "/test/clean/file".to_string(),
+            status: crate::clamav::types::ScanStatus::Clean,
+            scan_time: chrono::Utc::now(),
+            duration_ms: 50,
+            threat: None,
+        };
+        collector.record_scan_result(&scan_result_clean).await;
+
+        let scan_result_infected = crate::clamav::types::ScanResult {
+            path: "/test/infected/file".to_string(),
+            status: crate::clamav::types::ScanStatus::Infected,
+            scan_time: chrono::Utc::now(),
+            duration_ms: 75,
+            threat: Some("TestVirus".to_string()),
+        };
+        collector.record_scan_result(&scan_result_infected).await;
+
+        collector.update_clamav_version("0.103.8").await;
+        collector.record_rule_execution("test_rule", std::time::Duration::from_secs(5), 2, 1).await;
+
+        let exporter = TelemetryExporter::new(
+            config,
+            collector,
+            "test-machine".to_string(),
+            "1.0.0".to_string(),
+        ).unwrap();
+
+        // Test the export_metrics function directly
+        let result = exporter.export_metrics().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_export_metrics_with_all_scan_types() {
+        let config = create_test_config();
+        let collector = create_test_metrics_collector();
+
+        // Test different scan result types
+        let scan_results = vec![
+            crate::clamav::types::ScanResult {
+                path: "/test/clean1.txt".to_string(),
+                status: crate::clamav::types::ScanStatus::Clean,
+                scan_time: chrono::Utc::now(),
+                duration_ms: 25,
+                threat: None,
+            },
+            crate::clamav::types::ScanResult {
+                path: "/test/infected1.exe".to_string(),
+                status: crate::clamav::types::ScanStatus::Infected,
+                scan_time: chrono::Utc::now(),
+                duration_ms: 100,
+                threat: Some("Win.Trojan.Test".to_string()),
+            },
+            crate::clamav::types::ScanResult {
+                path: "/test/error.file".to_string(),
+                status: crate::clamav::types::ScanStatus::Error("Access denied".to_string()),
+                scan_time: chrono::Utc::now(),
+                duration_ms: 10,
+                threat: None,
+            },
+        ];
+
+        for result in scan_results {
+            collector.record_scan_result(&result).await;
+        }
+
+        collector.update_clamav_version("1.0.2").await;
+
+        let exporter = TelemetryExporter::new(
+            config,
+            collector,
+            "comprehensive-test-machine".to_string(),
+            "2.0.0".to_string(),
+        ).unwrap();
+
+        // This should exercise all the logging paths in export_metrics
+        let result = exporter.export_metrics().await;
+        assert!(result.is_ok());
+    }
+}

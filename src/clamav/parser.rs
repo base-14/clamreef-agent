@@ -168,11 +168,42 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_version_invalid_format() {
+        let response = "Invalid format";
+        let result = Parser::parse_version(response);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            Error::Parse(msg) => assert!(msg.contains("Invalid version response")),
+            _ => panic!("Expected parse error"),
+        }
+    }
+
+    #[test]
+    fn test_parse_version_invalid_database_number() {
+        let response = "ClamAV 0.103.8/invalid/Mon Mar 13 08:20:48 2023";
+        let result = Parser::parse_version(response);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            Error::Parse(msg) => assert!(msg.contains("Invalid database version")),
+            _ => panic!("Expected parse error"),
+        }
+    }
+
+    #[test]
+    fn test_parse_version_fewer_parts() {
+        let response = "ClamAV 0.103.8/26827";
+        let result = Parser::parse_version(response);
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn test_parse_scan_clean() {
         let response = "/path/to/file: OK";
         let result = Parser::parse_scan_result(response, "/path/to/file".to_string(), 100).unwrap();
         assert_eq!(result.status, ScanStatus::Clean);
         assert_eq!(result.threat, None);
+        assert_eq!(result.path, "/path/to/file");
+        assert_eq!(result.duration_ms, 100);
     }
 
     #[test]
@@ -181,5 +212,196 @@ mod tests {
         let result = Parser::parse_scan_result(response, "/path/to/file".to_string(), 100).unwrap();
         assert_eq!(result.status, ScanStatus::Infected);
         assert_eq!(result.threat, Some("Win.Trojan.Generic".to_string()));
+    }
+
+    #[test]
+    fn test_parse_scan_infected_no_colon() {
+        let response = "Win.Trojan.Generic FOUND";
+        let result = Parser::parse_scan_result(response, "/path/to/file".to_string(), 50).unwrap();
+        assert_eq!(result.status, ScanStatus::Infected);
+        assert_eq!(result.threat, Some("Unknown threat".to_string()));
+    }
+
+    #[test]
+    fn test_parse_scan_error() {
+        let response = "ERROR: Access denied";
+        let result = Parser::parse_scan_result(response, "/path/to/file".to_string(), 10).unwrap();
+        match result.status {
+            ScanStatus::Error(msg) => assert_eq!(msg, "Access denied"),
+            _ => panic!("Expected error status"),
+        }
+        assert_eq!(result.threat, None);
+    }
+
+    #[test]
+    fn test_parse_scan_unexpected_response() {
+        let response = "Some unexpected response";
+        let result = Parser::parse_scan_result(response, "/path/to/file".to_string(), 5).unwrap();
+        match result.status {
+            ScanStatus::Error(msg) => assert!(msg.contains("Unexpected response")),
+            _ => panic!("Expected error status"),
+        }
+    }
+
+    #[test]
+    fn test_parse_stats_complete() {
+        let response = r#"STATS
+POOLS: 1
+STATE: ACTIVE
+THREADS: live 2 idle 8 max 10
+QUEUE: 0 items, max 100
+MEMSTATS: heap 1.5M mmap 0.0M used 1.5M
+DBVERSION: 26827
+DBSIGS: 8645122
+DBBUILDTIME: Mon Mar 13 08:20:48 2023
+DBMD5: abc123def456
+END"#;
+
+        let stats = Parser::parse_stats(response).unwrap();
+        assert_eq!(stats.pools, 1);
+        assert_eq!(stats.state, "ACTIVE"); // State remains as set, END line doesn't affect it
+        assert_eq!(stats.threads.live, 2);
+        assert_eq!(stats.threads.idle, 8);
+        assert_eq!(stats.threads.max, 10);
+        assert_eq!(stats.queue.items, 0);
+        assert_eq!(stats.queue.max, 100);
+        assert_eq!(stats.mem_stats.heap, 1.5);
+        assert_eq!(stats.mem_stats.mmap, 0.0);
+        assert_eq!(stats.mem_stats.used, 1.5);
+        assert_eq!(stats.database.version, 26827);
+        assert_eq!(stats.database.sigs, 8645122);
+        assert_eq!(stats.database.build_time, "Mon Mar 13 08:20:48 2023");
+        assert_eq!(stats.database.md5, "abc123def456");
+    }
+
+    #[test]
+    fn test_parse_stats_minimal() {
+        let response = r#"STATS
+POOLS: 2
+STATE: IDLE
+END"#;
+
+        let stats = Parser::parse_stats(response).unwrap();
+        assert_eq!(stats.pools, 2);
+        assert_eq!(stats.state, "IDLE");
+        // Check defaults for unspecified fields
+        assert_eq!(stats.threads.live, 0);
+        assert_eq!(stats.threads.idle, 0);
+        assert_eq!(stats.threads.max, 0);
+        assert_eq!(stats.queue.items, 0);
+        assert_eq!(stats.queue.max, 0);
+        assert_eq!(stats.mem_stats.heap, 0.0);
+        assert_eq!(stats.database.version, 0);
+        assert_eq!(stats.database.sigs, 0);
+    }
+
+    #[test]
+    fn test_parse_stats_invalid_numbers() {
+        let response = r#"STATS
+POOLS: invalid
+STATE: ACTIVE
+THREADS: live invalid idle 2 max 5
+QUEUE: invalid items, max invalid
+MEMSTATS: heap invalid mmap invalid used invalid
+DBVERSION: invalid
+DBSIGS: invalid
+END"#;
+
+        let stats = Parser::parse_stats(response).unwrap();
+        // Should gracefully handle invalid numbers with defaults
+        assert_eq!(stats.pools, 0);
+        assert_eq!(stats.state, "ACTIVE");
+        assert_eq!(stats.threads.live, 0);
+        assert_eq!(stats.threads.idle, 0); // Regex doesn't match when live is invalid
+        assert_eq!(stats.threads.max, 0);
+        assert_eq!(stats.queue.items, 0);
+        assert_eq!(stats.queue.max, 0);
+        assert_eq!(stats.mem_stats.heap, 0.0);
+        assert_eq!(stats.database.version, 0);
+        assert_eq!(stats.database.sigs, 0);
+    }
+
+    #[test]
+    fn test_parse_stats_malformed_lines() {
+        let response = r#"STATS
+POOLS 1
+no_colon_line
+: empty_key
+key_only:
+POOLS: 3
+STATE: RUNNING
+END"#;
+
+        let stats = Parser::parse_stats(response).unwrap();
+        assert_eq!(stats.pools, 3); // Last valid POOLS line wins
+        assert_eq!(stats.state, "RUNNING");
+    }
+
+    #[test]
+    fn test_parse_stats_empty_response() {
+        let response = "";
+        let stats = Parser::parse_stats(response).unwrap();
+        assert_eq!(stats.pools, 0);
+        assert_eq!(stats.state, "");
+        assert_eq!(stats.threads.live, 0);
+        assert_eq!(stats.queue.items, 0);
+    }
+
+    #[test]
+    fn test_parse_stats_state_variations() {
+        let response1 = "STATE: SCANNING\nEND";
+        let stats1 = Parser::parse_stats(response1).unwrap();
+        assert_eq!(stats1.state, "SCANNING"); // State remains as set
+
+        let response2 = "STATE: ACTIVE";
+        let stats2 = Parser::parse_stats(response2).unwrap();
+        assert_eq!(stats2.state, "ACTIVE"); // No END, keeps original state
+    }
+
+    #[test]
+    fn test_parse_stats_whitespace_handling() {
+        let response = r#"
+STATS
+  POOLS  :  2
+  STATE:ACTIVE
+  THREADS  : live 1 idle 0 max 5
+
+END
+"#;
+
+        let stats = Parser::parse_stats(response).unwrap();
+        assert_eq!(stats.pools, 2);
+        assert_eq!(stats.state, "ACTIVE");
+        assert_eq!(stats.threads.live, 1);
+        assert_eq!(stats.threads.idle, 0);
+        assert_eq!(stats.threads.max, 5);
+    }
+
+    #[test]
+    fn test_parse_stats_unknown_fields() {
+        let response = r#"STATS
+POOLS: 1
+UNKNOWN_FIELD: some_value
+RANDOM: 123
+STATE: ACTIVE
+END"#;
+
+        let stats = Parser::parse_stats(response).unwrap();
+        assert_eq!(stats.pools, 1);
+        assert_eq!(stats.state, "ACTIVE");
+        // Unknown fields should be ignored gracefully
+    }
+
+    #[test]
+    fn test_parse_stats_end_state_conversion() {
+        // Test the specific case where STATE field is set to "END"
+        let response = r#"STATS
+POOLS: 1
+STATE: END
+"#;
+
+        let stats = Parser::parse_stats(response).unwrap();
+        assert_eq!(stats.pools, 1);
+        assert_eq!(stats.state, "READY"); // "END" state gets converted to "READY"
     }
 }

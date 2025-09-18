@@ -1,3 +1,4 @@
+#[cfg(target_os = "macos")]
 use serde_json;
 use std::sync::Arc;
 use std::time::Duration;
@@ -511,5 +512,41 @@ mod tests {
         let metrics = collector.get_metrics().await;
         // Just check that uptime is a valid number
         let _ = metrics.clamreef_agent_uptime_seconds;
+    }
+
+    #[tokio::test]
+    async fn test_scan_duration_list_truncation() {
+        let collector = MetricsCollector::new();
+
+        // Add more than 100 rule executions to trigger list truncation
+        // Note: Duration tracking is in record_rule_execution, not record_scan_result
+        for i in 0..150 {
+            let duration = Duration::from_millis((i + 1) as u64);
+            collector.record_rule_execution(
+                "test_rule",
+                duration,
+                1, // files scanned
+                0  // threats found
+            ).await;
+        }
+
+        // Verify that scan durations list is truncated to 100 items
+        let durations = collector.scan_durations.read().await;
+        assert_eq!(durations.len(), 100);
+
+        // The first 50 items should have been removed, so minimum duration should be 51
+        assert_eq!(*durations.iter().min().unwrap(), 51);
+        assert_eq!(*durations.iter().max().unwrap(), 150);
+    }
+
+    #[tokio::test]
+    async fn test_metrics_default_implementation() {
+        let collector = MetricsCollector::default();
+        let metrics = collector.get_metrics().await;
+
+        // Test that default implementation works
+        assert_eq!(metrics.clamreef_scans_total, 0);
+        assert_eq!(metrics.clamreef_threats_detected_total, 0);
+        assert_eq!(metrics.clamreef_scan_errors_total, 0);
     }
 }

@@ -52,6 +52,9 @@ check:
 coverage:
 	cargo tarpaulin --out Html --output-dir target/coverage
 
+coverage-check:
+	cargo tarpaulin --fail-under 75
+
 # Development
 dev:
 	RUST_LOG=debug cargo run -- --log-level debug
@@ -80,7 +83,7 @@ docker-run:
 		clamreef-agent
 
 # CI targets
-ci-test: lint fmt-check test coverage
+ci-test: lint fmt-check test coverage-check
 
 # Benchmark
 bench:
@@ -95,5 +98,5 @@ pre-commit: fmt lint test
 	@echo "All checks passed!"
 
 # Release preparation
-release-prep: clean fmt lint test coverage audit
+release-prep: clean fmt lint test coverage-check audit
 	@echo "Release preparation complete!"

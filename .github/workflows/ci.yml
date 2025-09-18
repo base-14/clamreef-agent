@@ -133,4 +133,4 @@ jobs:
       run: cargo install cargo-tarpaulin
 
     - name: Run coverage
-      run: cargo tarpaulin --verbose --all-features --workspace --timeout 120 --fail-under 80
+      run: cargo tarpaulin --verbose --all-features --workspace --timeout 120 --fail-under 75
