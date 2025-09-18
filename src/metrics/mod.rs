@@ -6,7 +6,7 @@ use tokio::sync::RwLock;
 
 use crate::clamav::{ScanResult, ScanStatus, Stats};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Metrics {
     pub clamreef_scans_total: u64,
     pub clamreef_threats_detected_total: u64,
@@ -41,30 +41,6 @@ pub struct HostMetrics {
     pub clamreef_agent_version: String,
 }
 
-impl Default for Metrics {
-    fn default() -> Self {
-        Self {
-            clamreef_scans_total: 0,
-            clamreef_threats_detected_total: 0,
-            clamreef_files_scanned_total: 0,
-            clamreef_scan_errors_total: 0,
-            clamreef_rule_executions_total: 0,
-            clamreef_agent_uptime_seconds: 0,
-            clamreef_clamav_database_version: 0,
-            clamreef_clamav_engine_version: String::new(),
-            clamreef_last_scan_duration_ms: 0,
-            clamreef_avg_scan_duration_ms: 0,
-            clamreef_max_scan_duration_ms: 0,
-            clamreef_quarantined_files_total: 0,
-            clamreef_cleaned_files_total: 0,
-            clamreef_last_threat_timestamp: None,
-            clamreef_database_age_hours: 0,
-            clamreef_realtime_protection_enabled: false,
-            clamreef_last_full_scan_timestamp: None,
-            clamreef_pending_scans: 0,
-        }
-    }
-}
 
 impl HostMetrics {
     pub fn collect() -> Self {
@@ -121,7 +97,7 @@ fn get_serial_number() -> Option<String> {
     use std::process::Command;
 
     let output = Command::new("system_profiler")
-        .args(&["SPHardwareDataType", "-json"])
+        .args(["SPHardwareDataType", "-json"])
         .output()
         .ok()?;
 
@@ -179,6 +155,12 @@ pub struct MetricsCollector {
     host_metrics: Arc<RwLock<HostMetrics>>,
     start_time: std::time::Instant,
     scan_durations: Arc<RwLock<Vec<u64>>>, // Store last N scan durations for averaging
+}
+
+impl Default for MetricsCollector {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MetricsCollector {
@@ -310,7 +292,7 @@ mod tests {
         assert_eq!(metrics.clamreef_cleaned_files_total, 0);
         assert_eq!(metrics.clamreef_last_threat_timestamp, None);
         assert_eq!(metrics.clamreef_database_age_hours, 0);
-        assert_eq!(metrics.clamreef_realtime_protection_enabled, false);
+        assert!(!metrics.clamreef_realtime_protection_enabled);
         assert_eq!(metrics.clamreef_last_full_scan_timestamp, None);
         assert_eq!(metrics.clamreef_pending_scans, 0);
     }

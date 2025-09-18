@@ -53,6 +53,11 @@ impl Parser {
             md5: String::new(),
         };
 
+        // Pre-compile regexes outside the loop
+        let threads_re = Regex::new(r"live (\d+) idle (\d+) max (\d+)").unwrap();
+        let queue_re = Regex::new(r"(\d+) items.*max (\d+)").unwrap();
+        let memstats_re = Regex::new(r"heap ([\d.]+)M mmap ([\d.]+)M used ([\d.]+)M").unwrap();
+
         for line in response.lines() {
             let line = line.trim();
             if line.is_empty() || line == "STATS" {
@@ -72,8 +77,7 @@ impl Parser {
                 "STATE" => state = value.to_string(),
                 "THREADS" => {
                     // Format: live 1 idle 0 max 10
-                    let re = Regex::new(r"live (\d+) idle (\d+) max (\d+)").unwrap();
-                    if let Some(caps) = re.captures(value) {
+                    if let Some(caps) = threads_re.captures(value) {
                         threads.live = caps[1].parse().unwrap_or(0);
                         threads.idle = caps[2].parse().unwrap_or(0);
                         threads.max = caps[3].parse().unwrap_or(0);
@@ -81,16 +85,14 @@ impl Parser {
                 }
                 "QUEUE" => {
                     // Format: 0 items, max 100
-                    let re = Regex::new(r"(\d+) items.*max (\d+)").unwrap();
-                    if let Some(caps) = re.captures(value) {
+                    if let Some(caps) = queue_re.captures(value) {
                         queue.items = caps[1].parse().unwrap_or(0);
                         queue.max = caps[2].parse().unwrap_or(0);
                     }
                 }
                 "MEMSTATS" => {
                     // Format: heap 1.234M mmap 0.000M used 1.234M
-                    let re = Regex::new(r"heap ([\d.]+)M mmap ([\d.]+)M used ([\d.]+)M").unwrap();
-                    if let Some(caps) = re.captures(value) {
+                    if let Some(caps) = memstats_re.captures(value) {
                         mem_stats.heap = caps[1].parse().unwrap_or(0.0);
                         mem_stats.mmap = caps[2].parse().unwrap_or(0.0);
                         mem_stats.used = caps[3].parse().unwrap_or(0.0);

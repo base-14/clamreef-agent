@@ -200,8 +200,8 @@ impl Scheduler {
 
             if path.is_dir() && rule.recursive {
                 results.extend(Box::pin(self.scan_directory(&path, rule)).await?);
-            } else if path.is_file() {
-                if self.should_scan_file(&path, rule)? {
+            } else if path.is_file()
+                && self.should_scan_file(&path, rule)? {
                     match self.clamav_client.scan(&path).await {
                         Ok(result) => results.push(result),
                         Err(e) => {
@@ -209,7 +209,6 @@ impl Scheduler {
                         }
                     }
                 }
-            }
         }
 
         Ok(results)

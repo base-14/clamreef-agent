@@ -64,7 +64,7 @@ impl ClamAVClientImpl {
         stream
             .write_all(cmd.as_bytes())
             .await
-            .map_err(|e| Error::Io(e))?;
+            .map_err(Error::Io)?;
 
         let mut response = Vec::new();
         let mut reader = BufReader::new(stream);
@@ -72,7 +72,7 @@ impl ClamAVClientImpl {
         timeout(self.timeout, reader.read_until(b'\0', &mut response))
             .await
             .map_err(|_| Error::Timeout("Read response timed out".to_string()))?
-            .map_err(|e| Error::Io(e))?;
+            .map_err(Error::Io)?;
 
         // Remove trailing null byte
         if response.last() == Some(&0) {
@@ -96,7 +96,7 @@ impl ClamAVClientImpl {
         stream
             .write_all(cmd.as_bytes())
             .await
-            .map_err(|e| Error::Io(e))?;
+            .map_err(Error::Io)?;
 
         let mut response = Vec::new();
         let mut reader = BufReader::new(stream);
@@ -104,7 +104,7 @@ impl ClamAVClientImpl {
         timeout(self.timeout, reader.read_until(b'\0', &mut response))
             .await
             .map_err(|_| Error::Timeout("Read response timed out".to_string()))?
-            .map_err(|e| Error::Io(e))?;
+            .map_err(Error::Io)?;
 
         // Remove trailing null byte
         if response.last() == Some(&0) {
