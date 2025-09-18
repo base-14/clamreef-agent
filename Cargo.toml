@@ -52,7 +52,7 @@ sysinfo = "0.30"
 hostname = "0.3"
 
 # File watching for config reload
-notify = "6.1"
+notify = "8.2"
 
 [dev-dependencies]
 mockall = "0.12"
