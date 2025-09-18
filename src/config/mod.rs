@@ -676,4 +676,44 @@ schedule = "0 0 */6 * * *"
         assert_eq!(config.agent.version, "1.0.0");
         assert_eq!(config.agent.machine_name, Some("test-validation".to_string()));
     }
+
+    #[tokio::test]
+    async fn test_load_from_default_locations_not_found() {
+        use std::env;
+
+        // Save original environment variables and current directory
+        let original_home = env::var("HOME");
+        let original_xdg_config_home = env::var("XDG_CONFIG_HOME");
+        let original_dir = env::current_dir().unwrap();
+
+        // Create a temporary directory and change to it (to avoid ./agent.toml)
+        let temp_dir = tempfile::tempdir().unwrap();
+        env::set_current_dir(temp_dir.path()).unwrap();
+
+        // Set environment to non-existent directories
+        env::set_var("HOME", "/nonexistent/home");
+        env::set_var("XDG_CONFIG_HOME", "/nonexistent/config");
+
+        // This should trigger the "No configuration file found" error (lines 109-110)
+        let result = Config::load_from_default_locations().await;
+        assert!(result.is_err());
+
+        match result.unwrap_err() {
+            crate::error::Error::Config(msg) => {
+                assert!(msg.contains("No configuration file found"));
+            }
+            _ => panic!("Expected config error"),
+        }
+
+        // Restore original environment variables and directory
+        env::set_current_dir(original_dir).unwrap();
+        match original_home {
+            Ok(home) => env::set_var("HOME", home),
+            Err(_) => env::remove_var("HOME"),
+        }
+        match original_xdg_config_home {
+            Ok(config) => env::set_var("XDG_CONFIG_HOME", config),
+            Err(_) => env::remove_var("XDG_CONFIG_HOME"),
+        }
+    }
 }

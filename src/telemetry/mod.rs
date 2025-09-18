@@ -403,4 +403,90 @@ mod tests {
         let result = exporter.export_metrics().await;
         assert!(result.is_ok());
     }
+
+    #[tokio::test]
+    async fn test_export_metrics_comprehensive_coverage() {
+        let config = create_test_config();
+        let collector = create_test_metrics_collector();
+
+        // Add comprehensive metrics to hit all logging paths
+        collector.record_rule_execution("test_rule_1", std::time::Duration::from_millis(100), 5, 2).await;
+        collector.record_rule_execution("test_rule_2", std::time::Duration::from_millis(200), 3, 0).await;
+        collector.record_rule_execution("test_rule_3", std::time::Duration::from_millis(50), 8, 1).await;
+
+        // Add different types of scan results
+        let results = vec![
+            crate::clamav::types::ScanResult {
+                path: "/test/file1.txt".to_string(),
+                status: crate::clamav::types::ScanStatus::Clean,
+                scan_time: chrono::Utc::now(),
+                duration_ms: 25,
+                threat: None,
+            },
+            crate::clamav::types::ScanResult {
+                path: "/test/malware.exe".to_string(),
+                status: crate::clamav::types::ScanStatus::Infected,
+                scan_time: chrono::Utc::now(),
+                duration_ms: 150,
+                threat: Some("Win.Trojan.Test".to_string()),
+            },
+            crate::clamav::types::ScanResult {
+                path: "/test/error.file".to_string(),
+                status: crate::clamav::types::ScanStatus::Error("Permission denied".to_string()),
+                scan_time: chrono::Utc::now(),
+                duration_ms: 5,
+                threat: None,
+            },
+        ];
+
+        for result in results {
+            collector.record_scan_result(&result).await;
+        }
+
+        collector.update_clamav_version("0.103.10").await;
+
+        let exporter = TelemetryExporter::new(
+            config,
+            collector,
+            "comprehensive-coverage-machine".to_string(),
+            "1.2.0".to_string(),
+        ).unwrap();
+
+        // This should exercise comprehensive logging in export_metrics including lines 51, 61
+        let result = exporter.export_metrics().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_export_metrics_protection_logging() {
+        let config = create_test_config();
+        let collector = create_test_metrics_collector();
+
+        // Set up metrics to specifically exercise protection logging (lines 83, 87)
+
+        // Simulate quarantined and cleaned files to hit line 83-87
+        // We need to record scan results that trigger the protection metrics
+        let infected_result = crate::clamav::types::ScanResult {
+            path: "/test/threat.exe".to_string(),
+            status: crate::clamav::types::ScanStatus::Infected,
+            scan_time: chrono::Utc::now(),
+            duration_ms: 200,
+            threat: Some("Test.Malware".to_string()),
+        };
+        collector.record_scan_result(&infected_result).await;
+
+        // Update realtime protection status to exercise line 87 conditional
+        collector.record_rule_execution("protection_rule", std::time::Duration::from_millis(50), 1, 1).await;
+
+        let exporter = TelemetryExporter::new(
+            config,
+            collector,
+            "protection-test-machine".to_string(),
+            "1.0.1".to_string(),
+        ).unwrap();
+
+        // This should exercise protection logging lines 83-87
+        let result = exporter.export_metrics().await;
+        assert!(result.is_ok());
+    }
 }

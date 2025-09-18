@@ -666,4 +666,45 @@ mod tests {
             _ => panic!("Expected scheduler error"),
         }
     }
+
+    #[tokio::test]
+    async fn test_scheduler_task_spawn_and_handle_collection() {
+        use std::time::Duration;
+        use tokio::time::timeout;
+
+        // Create a rule with a very frequent schedule for testing
+        let rule = ScanRule {
+            name: "test_spawn_rule".to_string(),
+            paths: vec!["/tmp".to_string()],
+            schedule: "0 0 */1 * * *".to_string(), // Every hour
+            exclude_patterns: vec![],
+            max_file_size: None,
+            recursive: true,
+            follow_symlinks: false,
+        };
+
+        let mut mock_client = MockClamAVClient::new();
+        mock_client.expect_scan().returning(|_| {
+            Ok(crate::clamav::types::ScanResult {
+                path: "/tmp/test".to_string(),
+                status: crate::clamav::types::ScanStatus::Clean,
+                scan_time: chrono::Utc::now(),
+                duration_ms: 10,
+                threat: None,
+            })
+        });
+
+        let client = Arc::new(mock_client);
+        let metrics = create_test_metrics();
+
+        let scheduler = Arc::new(Scheduler::new(vec![rule], client, metrics));
+
+        // Start the scheduler and timeout quickly to avoid infinite loop
+        // This should exercise lines 51-63 (task spawning and handle collection)
+        let start_task = scheduler.start();
+        let result = timeout(Duration::from_millis(100), start_task).await;
+
+        // Should timeout since scheduler runs indefinitely
+        assert!(result.is_err());
+    }
 }
