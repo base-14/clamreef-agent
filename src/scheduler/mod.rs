@@ -595,6 +595,8 @@ mod tests {
 
     #[test]
     fn test_shellexpand_tilde() {
+        let original_home = std::env::var("HOME");
+
         std::env::set_var("HOME", "/home/test");
 
         let expanded = shellexpand::tilde("~/Documents");
@@ -602,6 +604,12 @@ mod tests {
 
         let no_tilde = shellexpand::tilde("/absolute/path");
         assert_eq!(no_tilde, "/absolute/path");
+
+        // Restore original HOME environment variable
+        match original_home {
+            Ok(home) => std::env::set_var("HOME", home),
+            Err(_) => std::env::remove_var("HOME"),
+        }
     }
 
     #[tokio::test]

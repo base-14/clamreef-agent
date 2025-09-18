@@ -541,15 +541,30 @@ schedule = "0 0 */6 * * *"
     #[test]
     fn test_dirs_home_dir() {
         let original_home = std::env::var("HOME");
+        let original_userprofile = std::env::var("USERPROFILE");
 
+        // Test HOME variable (Unix-style) - remove USERPROFILE first to ensure clean test
+        if original_userprofile.is_ok() {
+            std::env::remove_var("USERPROFILE");
+        }
         std::env::set_var("HOME", "/test/home");
         let home_dir = dirs::home_dir();
         assert_eq!(home_dir, Some(PathBuf::from("/test/home")));
 
-        // Restore original HOME
+        // Test USERPROFILE variable (Windows-style) - remove HOME first to ensure clean test
+        std::env::remove_var("HOME");
+        std::env::set_var("USERPROFILE", "C:\\Users\\test");
+        let home_dir = dirs::home_dir();
+        assert_eq!(home_dir, Some(PathBuf::from("C:\\Users\\test")));
+
+        // Restore original environment variables
         match original_home {
             Ok(home) => std::env::set_var("HOME", home),
             Err(_) => std::env::remove_var("HOME"),
+        }
+        match original_userprofile {
+            Ok(profile) => std::env::set_var("USERPROFILE", profile),
+            Err(_) => std::env::remove_var("USERPROFILE"),
         }
     }
 
@@ -704,6 +719,7 @@ schedule = "0 0 */6 * * *"
 
         // Save original environment variables and current directory
         let original_home = env::var("HOME");
+        let original_userprofile = env::var("USERPROFILE");
         let original_xdg_config_home = env::var("XDG_CONFIG_HOME");
         let original_dir = env::current_dir().unwrap();
 
@@ -711,8 +727,9 @@ schedule = "0 0 */6 * * *"
         let temp_dir = tempfile::tempdir().unwrap();
         env::set_current_dir(temp_dir.path()).unwrap();
 
-        // Set environment to non-existent directories
+        // Set environment to non-existent directories (both Unix and Windows style)
         env::set_var("HOME", "/nonexistent/home");
+        env::set_var("USERPROFILE", "C:\\nonexistent\\home");
         env::set_var("XDG_CONFIG_HOME", "/nonexistent/config");
 
         // This should trigger the "No configuration file found" error (lines 109-110)
@@ -731,6 +748,10 @@ schedule = "0 0 */6 * * *"
         match original_home {
             Ok(home) => env::set_var("HOME", home),
             Err(_) => env::remove_var("HOME"),
+        }
+        match original_userprofile {
+            Ok(profile) => env::set_var("USERPROFILE", profile),
+            Err(_) => env::remove_var("USERPROFILE"),
         }
         match original_xdg_config_home {
             Ok(config) => env::set_var("XDG_CONFIG_HOME", config),
