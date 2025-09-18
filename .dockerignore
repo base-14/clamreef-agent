@@ -1,0 +1,72 @@
+# Target directory
+target/
+**/target/
+
+# Build artifacts
+*.so
+*.dylib
+*.dll
+*.a
+*.lib
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+*.md
+docs/
+
+# Test files
+tests/
+**/tests/
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+
+# Coverage reports
+coverage/
+*.profraw
+cobertura.xml
+tarpaulin-report.html
+
+# Cache
+.cache/
+
+# Editor backups
+*~
+*.bak
+*.orig
+
+# Rust specific
+Cargo.lock
+!Cargo.lock
+
+# Local config overrides
+config.local.*
+*.local.toml
