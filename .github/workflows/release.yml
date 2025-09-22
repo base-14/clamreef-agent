@@ -71,7 +71,7 @@ jobs:
         echo "- ⏱️ Performance analytics and scan duration tracking" >> changelog.md
         echo "- 🗓️ Automated ClamAV scanning with cron schedules" >> changelog.md
         echo "- 📡 OpenTelemetry integration for observability" >> changelog.md
-        echo "- 🌐 Cross-platform support (Linux, macOS, Windows)" >> changelog.md
+        echo "- 🌐 Cross-platform support (Linux ARM64, macOS ARM64)" >> changelog.md
         echo "" >> changelog.md
         echo "## Installation" >> changelog.md
         echo '```bash' >> changelog.md
@@ -100,50 +100,18 @@ jobs:
     strategy:
       matrix:
         include:
-          # Linux targets
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            artifact_name: clamreef-agent
-            asset_name: clamreef-agent-Linux-x86_64
-            cross: false
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-musl
-            artifact_name: clamreef-agent
-            asset_name: clamreef-agent-Linux-x86_64-musl
-            cross: true
+          # Linux aarch64/arm64 target
           - os: ubuntu-latest
             target: aarch64-unknown-linux-gnu
             artifact_name: clamreef-agent
             asset_name: clamreef-agent-Linux-aarch64
             cross: true
-          - os: ubuntu-latest
-            target: armv7-unknown-linux-gnueabihf
-            artifact_name: clamreef-agent
-            asset_name: clamreef-agent-Linux-armv7
-            cross: true
 
-          # macOS targets
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            artifact_name: clamreef-agent
-            asset_name: clamreef-agent-Darwin-x86_64
-            cross: false
+          # macOS aarch64/arm64 target (Apple Silicon)
           - os: macos-latest
             target: aarch64-apple-darwin
             artifact_name: clamreef-agent
             asset_name: clamreef-agent-Darwin-aarch64
-            cross: false
-
-          # Windows targets
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            artifact_name: clamreef-agent.exe
-            asset_name: clamreef-agent-Windows-x86_64.exe
-            cross: false
-          - os: windows-latest
-            target: i686-pc-windows-msvc
-            artifact_name: clamreef-agent.exe
-            asset_name: clamreef-agent-Windows-i686.exe
             cross: false
 
     steps:
@@ -157,51 +125,8 @@ jobs:
       continue-on-error: true
       id: toolchain
 
-    - name: Retry Rust toolchain installation (Windows)
-      if: steps.toolchain.outcome == 'failure' && matrix.os == 'windows-latest'
-      shell: powershell
-      run: |
-        Write-Host "First attempt failed, retrying Rust toolchain installation..."
-        $ErrorActionPreference = 'Stop'
-        $maxRetries = 3
-        $retryCount = 0
-        $success = $false
-
-        while (-not $success -and $retryCount -lt $maxRetries) {
-          $retryCount++
-          Write-Host "Attempt $retryCount of $maxRetries..."
-
-          try {
-            # Clear any partial downloads
-            if (Test-Path "$env:USERPROFILE\.rustup\tmp") {
-              Remove-Item -Path "$env:USERPROFILE\.rustup\tmp" -Recurse -Force
-            }
-
-            # Download and install rustup
-            Invoke-WebRequest -Uri "https://win.rustup.rs/x86_64" -OutFile "$env:TEMP\rustup-init.exe" -UseBasicParsing
-            & "$env:TEMP\rustup-init.exe" -y --default-toolchain stable --target ${{ matrix.target }}
-
-            # Add to PATH for current session
-            $env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"
-
-            # Verify installation
-            rustc --version
-            cargo --version
-
-            $success = $true
-            Write-Host "Rust toolchain installed successfully!"
-          }
-          catch {
-            Write-Host "Attempt $retryCount failed: $_"
-            if ($retryCount -eq $maxRetries) {
-              throw "Failed to install Rust after $maxRetries attempts"
-            }
-            Start-Sleep -Seconds 10
-          }
-        }
-
-    - name: Retry Rust toolchain installation (Unix)
-      if: steps.toolchain.outcome == 'failure' && matrix.os != 'windows-latest'
+    - name: Retry Rust toolchain installation
+      if: steps.toolchain.outcome == 'failure'
       run: |
         echo "First attempt failed, retrying Rust toolchain installation..."
         max_retries=3
@@ -271,27 +196,17 @@ jobs:
         CARGO_NET_RETRY: 3
         CARGO_HTTP_TIMEOUT: 60
 
-    - name: Strip binary (Unix)
-      if: matrix.os != 'windows-latest'
+    - name: Strip binary
       run: |
         strip target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
 
-    - name: Create archive (Unix)
-      if: matrix.os != 'windows-latest'
+    - name: Create archive
       run: |
         cd target/${{ matrix.target }}/release
         tar czf ../../../${{ matrix.asset_name }}.tar.gz ${{ matrix.artifact_name }}
         cd ../../..
 
-    - name: Create archive (Windows)
-      if: matrix.os == 'windows-latest'
-      run: |
-        cd target/${{ matrix.target }}/release
-        7z a ../../../${{ matrix.asset_name }}.zip ${{ matrix.artifact_name }}
-        cd ../../..
-
-    - name: Upload binary to release (Unix)
-      if: matrix.os != 'windows-latest'
+    - name: Upload binary to release
       uses: actions/upload-release-asset@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -301,19 +216,7 @@ jobs:
         asset_name: ${{ matrix.asset_name }}.tar.gz
         asset_content_type: application/gzip
 
-    - name: Upload binary to release (Windows)
-      if: matrix.os == 'windows-latest'
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ needs.create-release.outputs.upload_url }}
-        asset_path: ${{ matrix.asset_name }}.zip
-        asset_name: ${{ matrix.asset_name }}.zip
-        asset_content_type: application/zip
-
-    - name: Upload standalone binary (Unix)
-      if: matrix.os != 'windows-latest'
+    - name: Upload standalone binary
       uses: actions/upload-release-asset@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -323,16 +226,6 @@ jobs:
         asset_name: ${{ matrix.asset_name }}
         asset_content_type: application/octet-stream
 
-    - name: Upload standalone binary (Windows)
-      if: matrix.os == 'windows-latest'
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ needs.create-release.outputs.upload_url }}
-        asset_path: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
-        asset_name: ${{ matrix.asset_name }}
-        asset_content_type: application/octet-stream
 
   checksums:
     name: Generate Checksums
@@ -345,7 +238,7 @@ jobs:
     - name: Generate checksums
       run: |
         find . -name "clamreef-agent-*" -type f | while read file; do
-          if [[ "$file" == *.tar.gz ]] || [[ "$file" == *.zip ]] || [[ "$file" != *.* ]]; then
+          if [[ "$file" == *.tar.gz ]] || [[ "$file" != *.* ]]; then
             sha256sum "$file" >> checksums.txt
             sha512sum "$file" >> checksums.txt
           fi
