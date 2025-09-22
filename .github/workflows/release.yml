@@ -257,7 +257,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Download all artifacts
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v5
 
     - name: Generate checksums
       run: |
