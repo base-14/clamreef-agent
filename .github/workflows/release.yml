@@ -17,6 +17,9 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  CARGO_NET_RETRY: 10
+  CARGO_HTTP_TIMEOUT: 120
+  RUSTUP_USE_CURL: 1
 
 jobs:
   create-release:
@@ -118,41 +121,65 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        targets: ${{ matrix.target }}
-      continue-on-error: true
-      id: toolchain
-
-    - name: Retry Rust toolchain installation
-      if: steps.toolchain.outcome == 'failure'
+    - name: Install Rust toolchain with retry
+      env:
+        RUSTUP_USE_CURL: 1
+        RUSTUP_DIST_SERVER: https://static.rust-lang.org
+        CARGO_NET_RETRY: 10
+        CARGO_HTTP_TIMEOUT: 120
       run: |
-        echo "First attempt failed, retrying Rust toolchain installation..."
-        max_retries=3
+        set -e
+        echo "Installing Rust toolchain for target: ${{ matrix.target }}"
+
+        max_retries=5
         retry_count=0
+        retry_delay=10
 
         while [ $retry_count -lt $max_retries ]; do
           retry_count=$((retry_count + 1))
           echo "Attempt $retry_count of $max_retries..."
 
           # Clean up any partial downloads
-          rm -rf ~/.rustup/tmp
+          rm -rf ~/.rustup/tmp ~/.rustup/downloads 2>/dev/null || true
 
-          # Try to install rustup
-          if curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --target ${{ matrix.target }}; then
+          # Try to install rustup with increased timeout and retries
+          if curl --proto '=https' --tlsv1.2 --retry 5 --retry-delay 5 \
+                  --retry-connrefused --max-time 300 -sSf https://sh.rustup.rs | \
+             sh -s -- -y --default-toolchain stable --profile minimal \
+                      --target ${{ matrix.target }} --no-modify-path; then
+
+            # Export PATH for subsequent steps
+            echo "$HOME/.cargo/bin" >> $GITHUB_PATH
             export PATH="$HOME/.cargo/bin:$PATH"
+
+            # Verify installation
             rustc --version
             cargo --version
+            rustup target list --installed
+
             echo "Rust toolchain installed successfully!"
             break
           else
             echo "Attempt $retry_count failed"
             if [ $retry_count -eq $max_retries ]; then
               echo "Failed to install Rust after $max_retries attempts"
-              exit 1
+              echo "Trying alternative installation method..."
+
+              # Alternative: Use GitHub's pre-installed Rust and add target
+              if command -v rustup >/dev/null 2>&1; then
+                echo "Using pre-installed rustup"
+                rustup default stable
+                rustup target add ${{ matrix.target }} || true
+                rustc --version
+                cargo --version
+                exit 0
+              else
+                exit 1
+              fi
             fi
-            sleep 10
+
+            # Exponential backoff
+            sleep $((retry_delay * retry_count))
           fi
         done
 
@@ -184,17 +211,11 @@ jobs:
       if: "!matrix.cross"
       run: |
         cargo build --release --target ${{ matrix.target }} --all-features
-      env:
-        CARGO_NET_RETRY: 3
-        CARGO_HTTP_TIMEOUT: 60
 
     - name: Build binary (cross-compiled)
       if: matrix.cross
       run: |
         cross build --release --target ${{ matrix.target }} --all-features
-      env:
-        CARGO_NET_RETRY: 3
-        CARGO_HTTP_TIMEOUT: 60
 
     - name: Strip binary
       run: |
