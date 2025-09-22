@@ -218,8 +218,17 @@ jobs:
         cross build --release --target ${{ matrix.target }} --all-features
 
     - name: Strip binary
+      if: "!matrix.cross"
       run: |
         strip target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+
+    - name: Strip binary (cross-compiled)
+      if: matrix.cross
+      run: |
+        # For cross-compiled binaries, we need the appropriate strip tool
+        # or we can skip stripping since release profile already optimizes size
+        echo "Skipping strip for cross-compiled target: ${{ matrix.target }}"
+        ls -lh target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
 
     - name: Create archive
       run: |
