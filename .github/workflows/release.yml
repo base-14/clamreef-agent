@@ -154,11 +154,88 @@ jobs:
       uses: dtolnay/rust-toolchain@stable
       with:
         targets: ${{ matrix.target }}
+      continue-on-error: true
+      id: toolchain
+
+    - name: Retry Rust toolchain installation (Windows)
+      if: steps.toolchain.outcome == 'failure' && matrix.os == 'windows-latest'
+      shell: powershell
+      run: |
+        Write-Host "First attempt failed, retrying Rust toolchain installation..."
+        $ErrorActionPreference = 'Stop'
+        $maxRetries = 3
+        $retryCount = 0
+        $success = $false
+
+        while (-not $success -and $retryCount -lt $maxRetries) {
+          $retryCount++
+          Write-Host "Attempt $retryCount of $maxRetries..."
+
+          try {
+            # Clear any partial downloads
+            if (Test-Path "$env:USERPROFILE\.rustup\tmp") {
+              Remove-Item -Path "$env:USERPROFILE\.rustup\tmp" -Recurse -Force
+            }
+
+            # Download and install rustup
+            Invoke-WebRequest -Uri "https://win.rustup.rs/x86_64" -OutFile "$env:TEMP\rustup-init.exe" -UseBasicParsing
+            & "$env:TEMP\rustup-init.exe" -y --default-toolchain stable --target ${{ matrix.target }}
+
+            # Add to PATH for current session
+            $env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"
+
+            # Verify installation
+            rustc --version
+            cargo --version
+
+            $success = $true
+            Write-Host "Rust toolchain installed successfully!"
+          }
+          catch {
+            Write-Host "Attempt $retryCount failed: $_"
+            if ($retryCount -eq $maxRetries) {
+              throw "Failed to install Rust after $maxRetries attempts"
+            }
+            Start-Sleep -Seconds 10
+          }
+        }
+
+    - name: Retry Rust toolchain installation (Unix)
+      if: steps.toolchain.outcome == 'failure' && matrix.os != 'windows-latest'
+      run: |
+        echo "First attempt failed, retrying Rust toolchain installation..."
+        max_retries=3
+        retry_count=0
+
+        while [ $retry_count -lt $max_retries ]; do
+          retry_count=$((retry_count + 1))
+          echo "Attempt $retry_count of $max_retries..."
+
+          # Clean up any partial downloads
+          rm -rf ~/.rustup/tmp
+
+          # Try to install rustup
+          if curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --target ${{ matrix.target }}; then
+            export PATH="$HOME/.cargo/bin:$PATH"
+            rustc --version
+            cargo --version
+            echo "Rust toolchain installed successfully!"
+            break
+          else
+            echo "Attempt $retry_count failed"
+            if [ $retry_count -eq $max_retries ]; then
+              echo "Failed to install Rust after $max_retries attempts"
+              exit 1
+            fi
+            sleep 10
+          fi
+        done
 
     - name: Setup Rust cache
       uses: Swatinem/rust-cache@v2
       with:
         key: ${{ matrix.os }}-${{ matrix.target }}
+      continue-on-error: true
 
     - name: Install cross-compilation dependencies (Linux)
       if: matrix.cross && matrix.os == 'ubuntu-latest'
@@ -182,11 +259,17 @@ jobs:
       if: "!matrix.cross"
       run: |
         cargo build --release --target ${{ matrix.target }} --all-features
+      env:
+        CARGO_NET_RETRY: 3
+        CARGO_HTTP_TIMEOUT: 60
 
     - name: Build binary (cross-compiled)
       if: matrix.cross
       run: |
         cross build --release --target ${{ matrix.target }} --all-features
+      env:
+        CARGO_NET_RETRY: 3
+        CARGO_HTTP_TIMEOUT: 60
 
     - name: Strip binary (Unix)
       if: matrix.os != 'windows-latest'
