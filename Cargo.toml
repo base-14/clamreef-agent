@@ -48,7 +48,7 @@ futures = "0.3"
 async-trait = "0.1"
 
 # System info
-sysinfo = "0.30"
+sysinfo = "0.37"
 hostname = "0.3"
 
 # File watching for config reload
