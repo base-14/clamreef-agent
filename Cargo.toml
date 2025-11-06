@@ -51,7 +51,7 @@ async-trait = "0.1"
 reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
 
 # System info
-sysinfo = "0.30"
+sysinfo = "0.37"
 hostname = "0.3"
 
 # File watching for config reload
