@@ -10,6 +10,8 @@ pub struct Config {
     pub telemetry: TelemetryConfig,
     pub clamav: ClamAVConfig,
     pub rules: Vec<ScanRule>,
+    #[serde(default)]
+    pub oauth2client: Option<OAuth2ClientConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -29,6 +31,22 @@ pub struct TelemetryConfig {
     pub timeout_seconds: u64,
     #[serde(default)]
     pub insecure: bool,
+    #[serde(default)]
+    pub auth: Option<AuthConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AuthConfig {
+    pub authenticator: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct OAuth2ClientConfig {
+    pub client_id: String,
+    pub client_secret: String,
+    pub token_url: String,
+    #[serde(default)]
+    pub endpoint_params: std::collections::HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -119,6 +137,29 @@ impl Config {
             return Err(Error::Config(
                 "Either socket_path or tcp_host/tcp_port must be configured".to_string(),
             ));
+        }
+
+        // Validate OAuth2 authentication configuration
+        if let Some(ref auth) = self.telemetry.auth {
+            if auth.authenticator == "oauth2client" {
+                if self.oauth2client.is_none() {
+                    return Err(Error::Config(
+                        "oauth2client authenticator specified but oauth2client configuration is missing".to_string(),
+                    ));
+                }
+                // Validate OAuth2 client config
+                if let Some(ref oauth2) = self.oauth2client {
+                    if oauth2.client_id.is_empty() {
+                        return Err(Error::Config("oauth2client.client_id cannot be empty".to_string()));
+                    }
+                    if oauth2.client_secret.is_empty() {
+                        return Err(Error::Config("oauth2client.client_secret cannot be empty".to_string()));
+                    }
+                    if oauth2.token_url.is_empty() {
+                        return Err(Error::Config("oauth2client.token_url cannot be empty".to_string()));
+                    }
+                }
+            }
         }
 
         // Validate rules
@@ -394,6 +435,7 @@ schedule = "0 0 */6 * * *"
                 interval_seconds: 60,
                 timeout_seconds: 10,
                 insecure: false,
+                auth: None,
             },
             clamav: ClamAVConfig {
                 socket_path: None,
@@ -402,6 +444,7 @@ schedule = "0 0 */6 * * *"
                 scan_timeout_seconds: 300,
             },
             rules: vec![],
+            oauth2client: None,
         };
 
         let result = config.validate();
@@ -425,6 +468,7 @@ schedule = "0 0 */6 * * *"
                 interval_seconds: 60,
                 timeout_seconds: 10,
                 insecure: false,
+                auth: None,
             },
             clamav: ClamAVConfig {
                 socket_path: Some("/var/run/clamav/clamd.ctl".to_string()),
@@ -441,6 +485,7 @@ schedule = "0 0 */6 * * *"
                 recursive: true,
                 follow_symlinks: false,
             }],
+            oauth2client: None,
         };
 
         let result = config.validate();
@@ -464,6 +509,7 @@ schedule = "0 0 */6 * * *"
                 interval_seconds: 60,
                 timeout_seconds: 10,
                 insecure: false,
+                auth: None,
             },
             clamav: ClamAVConfig {
                 socket_path: Some("/var/run/clamav/clamd.ctl".to_string()),
@@ -480,6 +526,7 @@ schedule = "0 0 */6 * * *"
                 recursive: true,
                 follow_symlinks: false,
             }],
+            oauth2client: None,
         };
 
         let result = config.validate();
@@ -503,6 +550,7 @@ schedule = "0 0 */6 * * *"
                 interval_seconds: 60,
                 timeout_seconds: 10,
                 insecure: false,
+                auth: None,
             },
             clamav: ClamAVConfig {
                 socket_path: Some("/var/run/clamav/clamd.ctl".to_string()),
@@ -511,6 +559,7 @@ schedule = "0 0 */6 * * *"
                 scan_timeout_seconds: 300,
             },
             rules: vec![],
+            oauth2client: None,
         };
 
         assert_eq!(config.get_machine_name(), "custom-machine");
@@ -521,7 +570,10 @@ schedule = "0 0 */6 * * *"
                 machine_name: None,
                 log_level: "info".to_string(),
             },
-            ..config
+            telemetry: config.telemetry.clone(),
+            clamav: config.clamav.clone(),
+            rules: config.rules.clone(),
+            oauth2client: config.oauth2client.clone(),
         };
 
         // Should return hostname or "unknown"
@@ -648,6 +700,7 @@ schedule = "0 0 */6 * * *"
                 interval_seconds: 60,
                 timeout_seconds: 10,
                 insecure: true,
+                auth: None,
             },
             clamav: ClamAVConfig {
                 socket_path: None,
@@ -664,6 +717,7 @@ schedule = "0 0 */6 * * *"
                 recursive: true,
                 follow_symlinks: false,
             }],
+            oauth2client: None,
         };
 
         let result = config.validate();

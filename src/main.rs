@@ -137,6 +137,7 @@ async fn main() -> Result<()> {
     // Initialize telemetry
     let telemetry_exporter = Arc::new(TelemetryExporter::new(
         config.telemetry.clone(),
+        config.oauth2client.clone(),
         Arc::clone(&metrics_collector),
         config.get_machine_name(),
         env!("CARGO_PKG_VERSION").to_string(),
@@ -326,6 +327,7 @@ mod tests {
                 interval_seconds: 60,
                 timeout_seconds: 10,
                 insecure: false,
+                auth: None,
             },
             clamav: clamreef_agent::config::ClamAVConfig {
                 socket_path: Some("/var/run/clamav/clamd.ctl".to_string()),
@@ -334,6 +336,7 @@ mod tests {
                 scan_timeout_seconds: 300,
             },
             rules: vec![],
+            oauth2client: None,
         };
 
         let connection = create_clamav_connection(&config).unwrap();
@@ -358,6 +361,7 @@ mod tests {
                 interval_seconds: 60,
                 timeout_seconds: 10,
                 insecure: false,
+                auth: None,
             },
             clamav: clamreef_agent::config::ClamAVConfig {
                 socket_path: None,
@@ -366,6 +370,7 @@ mod tests {
                 scan_timeout_seconds: 300,
             },
             rules: vec![],
+            oauth2client: None,
         };
 
         let connection = create_clamav_connection(&config).unwrap();
@@ -391,6 +396,7 @@ mod tests {
                 interval_seconds: 60,
                 timeout_seconds: 10,
                 insecure: false,
+                auth: None,
             },
             clamav: clamreef_agent::config::ClamAVConfig {
                 socket_path: None,
@@ -399,6 +405,7 @@ mod tests {
                 scan_timeout_seconds: 300,
             },
             rules: vec![],
+            oauth2client: None,
         };
 
         let result = create_clamav_connection(&config);
@@ -511,12 +518,14 @@ schedule = "0 0 * * * *"
             interval_seconds: 1,
             timeout_seconds: 5,
             insecure: true,
+            auth: None,
         };
 
         let metrics = Arc::new(MetricsCollector::new());
         let exporter = Arc::new(
             TelemetryExporter::new(
                 telemetry_config,
+                None,
                 metrics,
                 "test".to_string(),
                 "1.0.0".to_string(),

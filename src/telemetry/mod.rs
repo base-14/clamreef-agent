@@ -3,7 +3,9 @@ use std::time::Duration;
 use tokio::time::interval;
 use tracing::{error, info};
 
-use crate::config::TelemetryConfig;
+use crate::auth::oauth2::OAuth2Client;
+use crate::auth::AuthProvider;
+use crate::config::{OAuth2ClientConfig, TelemetryConfig};
 use crate::error::Result;
 use crate::metrics::MetricsCollector;
 
@@ -12,18 +14,37 @@ use crate::metrics::MetricsCollector;
 pub struct TelemetryExporter {
     config: TelemetryConfig,
     metrics_collector: Arc<MetricsCollector>,
+    auth_provider: Option<Arc<dyn AuthProvider>>,
 }
 
 impl TelemetryExporter {
     pub fn new(
         config: TelemetryConfig,
+        oauth2_config: Option<OAuth2ClientConfig>,
         metrics_collector: Arc<MetricsCollector>,
         _machine_name: String,
         _agent_version: String,
     ) -> Result<Self> {
+        // Create OAuth2 auth provider if configured
+        let auth_provider: Option<Arc<dyn AuthProvider>> = if let Some(ref auth) = config.auth {
+            if auth.authenticator == "oauth2client" {
+                if let Some(oauth2_cfg) = oauth2_config {
+                    let oauth2_client = OAuth2Client::new(oauth2_cfg)?;
+                    Some(Arc::new(oauth2_client))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         Ok(Self {
             config,
             metrics_collector,
+            auth_provider,
         })
     }
 
@@ -40,11 +61,27 @@ impl TelemetryExporter {
     }
 
     async fn export_metrics(&self) -> Result<()> {
+        // Get access token if OAuth2 is configured
+        if let Some(ref auth_provider) = self.auth_provider {
+            match auth_provider.get_token().await {
+                Ok(token) => {
+                    info!("Successfully obtained auth token for telemetry export");
+                    // TODO: Use this token in the Authorization header when making OTLP requests
+                    // For now, just log that we have the token
+                    let _token = token; // Suppress unused variable warning
+                }
+                Err(e) => {
+                    error!("Failed to get auth token: {}", e);
+                    return Err(e);
+                }
+            }
+        }
+
         let metrics = self.metrics_collector.get_metrics().await;
         let host_metrics = self.metrics_collector.get_host_metrics().await;
 
         // For now, just log the metrics
-        // TODO: Implement OTLP export
+        // TODO: Implement OTLP export with auth headers
 
         // Core scanning metrics
         info!(
@@ -137,6 +174,7 @@ mod tests {
             interval_seconds: 1,
             timeout_seconds: 5,
             insecure: true,
+            auth: None,
         }
     }
 
@@ -151,6 +189,7 @@ mod tests {
 
         let exporter = TelemetryExporter::new(
             config.clone(),
+            None,
             collector.clone(),
             "test-machine".to_string(),
             "1.0.0".to_string(),
@@ -175,6 +214,7 @@ mod tests {
 
         let exporter = TelemetryExporter::new(
             config,
+            None,
             collector,
             "test-machine".to_string(),
             "1.0.0".to_string(),
@@ -203,6 +243,7 @@ mod tests {
 
         let exporter = TelemetryExporter::new(
             config,
+            None,
             collector,
             "test-machine".to_string(),
             "1.0.0".to_string(),
@@ -230,6 +271,7 @@ mod tests {
 
         let exporter = TelemetryExporter::new(
             config,
+            None,
             collector,
             "test-machine".to_string(),
             "1.0.0".to_string(),
@@ -257,6 +299,7 @@ mod tests {
 
         let exporter = TelemetryExporter::new(
             config,
+            None,
             collector,
             "test-machine".to_string(),
             "1.0.0".to_string(),
@@ -274,6 +317,7 @@ mod tests {
 
         let exporter = TelemetryExporter::new(
             config,
+            None,
             collector,
             "test-machine".to_string(),
             "1.0.0".to_string(),
@@ -291,12 +335,14 @@ mod tests {
             interval_seconds: 100, // Long interval
             timeout_seconds: 5,
             insecure: true,
+            auth: None,
         };
         let collector = create_test_metrics_collector();
 
         let exporter = Arc::new(
             TelemetryExporter::new(
                 config,
+                None,
                 collector,
                 "test-machine".to_string(),
                 "1.0.0".to_string(),
@@ -319,6 +365,7 @@ mod tests {
             interval_seconds: 30,
             timeout_seconds: 15,
             insecure: false,
+            auth: None,
         };
 
         assert_eq!(config.endpoint, "https://otlp.example.com:4317");
@@ -358,6 +405,7 @@ mod tests {
 
         let exporter = TelemetryExporter::new(
             config,
+            None,
             collector,
             "test-machine".to_string(),
             "1.0.0".to_string(),
@@ -407,6 +455,7 @@ mod tests {
 
         let exporter = TelemetryExporter::new(
             config,
+            None,
             collector,
             "comprehensive-test-machine".to_string(),
             "2.0.0".to_string(),
@@ -467,6 +516,7 @@ mod tests {
 
         let exporter = TelemetryExporter::new(
             config,
+            None,
             collector,
             "comprehensive-coverage-machine".to_string(),
             "1.2.0".to_string(),
@@ -508,6 +558,7 @@ mod tests {
 
         let exporter = TelemetryExporter::new(
             config,
+            None,
             collector,
             "protection-test-machine".to_string(),
             "1.0.1".to_string(),

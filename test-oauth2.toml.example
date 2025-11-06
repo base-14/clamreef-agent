@@ -1,0 +1,45 @@
+# Example Configuration for ClamReef Agent with OAuth2
+# Copy this file to test-oauth2.toml and fill in your actual values
+
+[agent]
+version = "1.0.0"
+log_level = "debug"
+
+[telemetry]
+endpoint = "https://your-otel-collector:4317"
+interval_seconds = 30
+timeout_seconds = 10
+insecure = false
+service_name = "clamreef"
+
+# Configure OAuth2 authentication for telemetry endpoint
+[telemetry.auth]
+authenticator = "oauth2client"
+
+# OAuth2 client credentials configuration
+[oauth2client]
+client_id = "your-client-id"
+client_secret = "your-client-secret"
+token_url = "https://your-idp/realms/your-realm/protocol/openid-connect/token"
+
+# Additional endpoint parameters
+[oauth2client.endpoint_params]
+audience = "your-audience"
+
+[clamav]
+# Use Unix socket if available
+socket_path = "/opt/homebrew/var/run/clamav/clamd.sock"
+# Fallback to TCP
+# tcp_host = "127.0.0.1"
+# tcp_port = 3310
+scan_timeout_seconds = 300
+
+# Test scan rule
+[[rules]]
+name = "test_scan"
+paths = ["/tmp/clamav-test"]
+schedule = "0 */5 * * * *"  # Every 5 minutes for testing (6-field cron: sec min hour day month weekday)
+exclude_patterns = ["*.log"]
+max_file_size = "10MB"
+recursive = false
+follow_symlinks = false
