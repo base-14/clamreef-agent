@@ -175,6 +175,7 @@ mod tests {
             timeout_seconds: 5,
             insecure: true,
             auth: None,
+            service_name: "clamreef".to_string(),
         }
     }
 
@@ -336,6 +337,7 @@ mod tests {
             timeout_seconds: 5,
             insecure: true,
             auth: None,
+            service_name: "clamreef".to_string(),
         };
         let collector = create_test_metrics_collector();
 
@@ -366,6 +368,7 @@ mod tests {
             timeout_seconds: 15,
             insecure: false,
             auth: None,
+            service_name: "clamreef".to_string(),
         };
 
         assert_eq!(config.endpoint, "https://otlp.example.com:4317");

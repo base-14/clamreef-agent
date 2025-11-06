@@ -1,2 +1,5 @@
 /target
 .idea/
+
+# Test configurations with secrets
+test-oauth2.toml

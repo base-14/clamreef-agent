@@ -33,6 +33,8 @@ pub struct TelemetryConfig {
     pub insecure: bool,
     #[serde(default)]
     pub auth: Option<AuthConfig>,
+    #[serde(default = "default_service_name")]
+    pub service_name: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -74,6 +76,10 @@ pub struct ScanRule {
 
 fn default_log_level() -> String {
     "info".to_string()
+}
+
+fn default_service_name() -> String {
+    "clamreef".to_string()
 }
 
 fn default_interval() -> u64 {
@@ -436,6 +442,7 @@ schedule = "0 0 */6 * * *"
                 timeout_seconds: 10,
                 insecure: false,
                 auth: None,
+                service_name: "clamreef".to_string(),
             },
             clamav: ClamAVConfig {
                 socket_path: None,
@@ -469,6 +476,7 @@ schedule = "0 0 */6 * * *"
                 timeout_seconds: 10,
                 insecure: false,
                 auth: None,
+                service_name: "clamreef".to_string(),
             },
             clamav: ClamAVConfig {
                 socket_path: Some("/var/run/clamav/clamd.ctl".to_string()),
@@ -510,6 +518,7 @@ schedule = "0 0 */6 * * *"
                 timeout_seconds: 10,
                 insecure: false,
                 auth: None,
+                service_name: "clamreef".to_string(),
             },
             clamav: ClamAVConfig {
                 socket_path: Some("/var/run/clamav/clamd.ctl".to_string()),
@@ -551,6 +560,7 @@ schedule = "0 0 */6 * * *"
                 timeout_seconds: 10,
                 insecure: false,
                 auth: None,
+                service_name: "clamreef".to_string(),
             },
             clamav: ClamAVConfig {
                 socket_path: Some("/var/run/clamav/clamd.ctl".to_string()),
@@ -701,6 +711,7 @@ schedule = "0 0 */6 * * *"
                 timeout_seconds: 10,
                 insecure: true,
                 auth: None,
+                service_name: "clamreef".to_string(),
             },
             clamav: ClamAVConfig {
                 socket_path: None,
