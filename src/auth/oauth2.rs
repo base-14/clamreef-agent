@@ -95,10 +95,9 @@ impl OAuth2Client {
             )));
         }
 
-        let token_response: TokenResponse = response
-            .json()
-            .await
-            .map_err(|e| Error::Telemetry(format!("Failed to parse OAuth2 token response: {}", e)))?;
+        let token_response: TokenResponse = response.json().await.map_err(|e| {
+            Error::Telemetry(format!("Failed to parse OAuth2 token response: {}", e))
+        })?;
 
         let expires_at = SystemTime::now() + Duration::from_secs(token_response.expires_in);
 

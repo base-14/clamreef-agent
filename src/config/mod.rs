@@ -156,13 +156,19 @@ impl Config {
                 // Validate OAuth2 client config
                 if let Some(ref oauth2) = self.oauth2client {
                     if oauth2.client_id.is_empty() {
-                        return Err(Error::Config("oauth2client.client_id cannot be empty".to_string()));
+                        return Err(Error::Config(
+                            "oauth2client.client_id cannot be empty".to_string(),
+                        ));
                     }
                     if oauth2.client_secret.is_empty() {
-                        return Err(Error::Config("oauth2client.client_secret cannot be empty".to_string()));
+                        return Err(Error::Config(
+                            "oauth2client.client_secret cannot be empty".to_string(),
+                        ));
                     }
                     if oauth2.token_url.is_empty() {
-                        return Err(Error::Config("oauth2client.token_url cannot be empty".to_string()));
+                        return Err(Error::Config(
+                            "oauth2client.token_url cannot be empty".to_string(),
+                        ));
                     }
                 }
             }
