@@ -262,15 +262,34 @@ jobs:
     needs: [create-release, build]
     runs-on: ubuntu-latest
     steps:
-    - name: Download all artifacts
-      uses: actions/download-artifact@v3
+    - name: Checkout code
+      uses: actions/checkout@v4
 
-    - name: Generate checksums
+    - name: Get release info
+      id: get_release
       run: |
-        find . -name "clamreef-agent-*" -type f | while read file; do
-          if [[ "$file" == *.tar.gz ]] || [[ "$file" != *.* ]]; then
-            sha256sum "$file" >> checksums.txt
-            sha512sum "$file" >> checksums.txt
+        echo "Getting release info for tag: ${{ github.ref }}"
+        # Release assets will be available after build jobs complete
+
+    - name: Download release assets and generate checksums
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        # Get the release ID
+        RELEASE_ID="${{ needs.create-release.outputs.release_id }}"
+
+        # Get release assets
+        ASSETS=$(gh api repos/${{ github.repository }}/releases/$RELEASE_ID/assets --jq '.[].browser_download_url')
+
+        # Download each asset and generate checksums
+        for asset_url in $ASSETS; do
+          echo "Downloading: $asset_url"
+          asset_name=$(basename "$asset_url")
+          curl -L -H "Authorization: token $GITHUB_TOKEN" -o "$asset_name" "$asset_url"
+
+          if [[ "$asset_name" == *.tar.gz ]] || [[ "$asset_name" != *.* ]]; then
+            sha256sum "$asset_name" >> checksums.txt
+            sha512sum "$asset_name" >> checksums.txt
           fi
         done
 
