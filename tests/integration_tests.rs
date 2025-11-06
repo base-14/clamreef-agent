@@ -75,6 +75,7 @@ async fn test_metrics_telemetry_integration() {
         timeout_seconds: 5,
         insecure: true,
         auth: None,
+        service_name: "clamreef".to_string(),
     };
 
     let exporter = TelemetryExporter::new(
