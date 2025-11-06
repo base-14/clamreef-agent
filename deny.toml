@@ -95,6 +95,7 @@ allow = [
     "Unicode-DFS-2016",
     "Unicode-3.0",
     "CC0-1.0",
+    "MPL-2.0",  # Mozilla Public License 2.0 - used by webpki-roots (rustls dependency)
 ]
 # The confidence threshold for detecting a license from license text.
 # The higher the value, the more closely the license text must be to the
