@@ -1,3 +1,4 @@
+pub mod auth;
 pub mod clamav;
 pub mod config;
 pub mod error;

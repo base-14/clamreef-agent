@@ -1,0 +1,52 @@
+# ClamReef Agent Configuration with OAuth2 Authentication
+# This example demonstrates how to configure OAuth2 client credentials flow
+# for authenticating with the OTLP collector endpoint
+
+[agent]
+version = "1.0.0"
+log_level = "info"
+
+[telemetry]
+endpoint = "https://collector.example.com:4317"  # OTLP gRPC endpoint
+interval_seconds = 30
+timeout_seconds = 10
+insecure = false
+
+# Configure OAuth2 authentication for telemetry endpoint
+[telemetry.auth]
+authenticator = "oauth2client"
+
+# OAuth2 client credentials configuration
+[oauth2client]
+client_id = "glomopay-agent"
+client_secret = "your-secret-here"
+token_url = "https://id.b14.dev/realms/glomopay/protocol/openid-connect/token"
+
+# Additional endpoint parameters (optional)
+[oauth2client.endpoint_params]
+audience = "b14collector"
+
+[clamav]
+socket_path = "/var/run/clamav/clamd.sock"
+# Or use TCP connection:
+# tcp_host = "127.0.0.1"
+# tcp_port = 3310
+scan_timeout_seconds = 300
+
+# Scan rules
+[[rules]]
+name = "system_scan"
+paths = ["/usr/local/bin", "/opt"]
+schedule = "0 */6 * * *"  # Every 6 hours
+exclude_patterns = ["*.log", "*.tmp"]
+max_file_size = "100MB"
+recursive = true
+follow_symlinks = false
+
+[[rules]]
+name = "home_scan"
+paths = ["/home"]
+schedule = "0 0 * * SUN"  # Weekly on Sunday
+exclude_patterns = ["*.log", "*.cache", "node_modules/*"]
+recursive = true
+follow_symlinks = false

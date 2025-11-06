@@ -60,24 +60,29 @@ cargo clean
    - Parses STATS output for metrics
    - Manages scan operations and results
 
-2. **Telemetry Module** (`src/telemetry/`)
+2. **Authentication Module** (`src/auth/`)
+   - OAuth2 client credentials flow implementation
+   - Token caching with automatic refresh (60 second buffer before expiration)
+   - Pluggable authentication provider trait for future auth methods
+
+3. **Telemetry Module** (`src/telemetry/`)
    - OpenTelemetry integration for metrics export
    - Custom metrics for ClamAV stats (scan count, virus detections, database version)
    - System metrics (version, machine name)
-   - Implements OTLP exporter
+   - Implements OTLP exporter with optional OAuth2 authentication
 
-3. **Configuration Management** (`src/config/`)
+4. **Configuration Management** (`src/config/`)
    - Local config loader (TOML/YAML) for v1
    - Rule structure: scan paths, patterns, exclusions
    - Cron-like scheduling for each rule
    - Future: Remote config fetcher from ClamReef Server
 
-4. **Scheduler** (`src/scheduler/`)
+5. **Scheduler** (`src/scheduler/`)
    - Cron expression parser and executor
    - Rule-based scan scheduling
    - Async task management using tokio
 
-5. **Main Agent Loop** (`src/main.rs`)
+6. **Main Agent Loop** (`src/main.rs`)
    - Initializes OpenTelemetry pipeline
    - Loads configuration
    - Starts scheduler
@@ -113,6 +118,19 @@ machine_name = "hostname"  # Optional, auto-detected if not set
 endpoint = "http://localhost:4317"  # OTLP gRPC endpoint
 interval_seconds = 60
 
+# Optional: OAuth2 authentication for telemetry endpoint
+[telemetry.auth]
+authenticator = "oauth2client"
+
+# OAuth2 client credentials (required if telemetry.auth.authenticator = "oauth2client")
+[oauth2client]
+client_id = "your-client-id"
+client_secret = "your-client-secret"
+token_url = "https://auth.example.com/oauth/token"
+
+[oauth2client.endpoint_params]
+audience = "your-audience"  # Optional additional parameters
+
 [clamav]
 socket_path = "/var/run/clamav/clamd.ctl"  # Unix socket
 # OR
@@ -125,6 +143,8 @@ paths = ["/usr/local/bin", "/opt"]
 schedule = "0 */6 * * *"  # Every 6 hours
 exclude_patterns = ["*.log", "*.tmp"]
 ```
+
+See `examples/agent-oauth2.toml` for a complete OAuth2 configuration example.
 
 ## Testing Strategy
 

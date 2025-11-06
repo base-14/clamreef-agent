@@ -74,10 +74,12 @@ async fn test_metrics_telemetry_integration() {
         interval_seconds: 1,
         timeout_seconds: 5,
         insecure: true,
+        auth: None,
     };
 
     let exporter = TelemetryExporter::new(
         telemetry_config,
+        None,
         std::sync::Arc::new(metrics),
         "test-machine".to_string(),
         "1.0.0".to_string(),
@@ -201,6 +203,7 @@ recursive = true
     // Test telemetry export
     let telemetry_exporter = TelemetryExporter::new(
         config.telemetry.clone(),
+        config.oauth2client.clone(),
         metrics.clone(),
         config.get_machine_name(),
         "1.0.0".to_string(),
