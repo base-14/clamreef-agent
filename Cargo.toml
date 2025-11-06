@@ -48,7 +48,7 @@ futures = "0.3"
 async-trait = "0.1"
 
 # HTTP client for OAuth2
-reqwest = { version = "0.11", features = ["json"] }
+reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
 
 # System info
 sysinfo = "0.30"
