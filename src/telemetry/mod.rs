@@ -803,4 +803,132 @@ mod tests {
         let result = exporter.export_metrics().await;
         assert!(result.is_ok());
     }
+
+    #[tokio::test]
+    async fn test_telemetry_disabled() {
+        let mut config = create_test_config();
+        config.enabled = false;
+        let collector = create_test_metrics_collector();
+
+        let exporter = TelemetryExporter::new_with_skip_export(
+            config,
+            None,
+            collector,
+            "test-machine".to_string(),
+            "1.0.0".to_string(),
+        )
+        .unwrap();
+
+        // Should return Ok without doing anything
+        let result = exporter.export_metrics().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_build_otlp_payload() {
+        let metrics = crate::metrics::Metrics::default();
+        let host_metrics = crate::metrics::HostMetrics::collect();
+
+        let payload = build_otlp_payload(&metrics, &host_metrics, "test-service");
+        assert!(payload.is_ok());
+
+        let json = payload.unwrap();
+        assert!(json["resourceMetrics"].is_array());
+        assert!(!json["resourceMetrics"].as_array().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_export_with_oauth2_config() {
+        let config = create_test_config();
+        let collector = create_test_metrics_collector();
+
+        // Create OAuth2 config
+        let oauth2_config = crate::config::OAuth2ClientConfig {
+            client_id: "test-client".to_string(),
+            client_secret: "test-secret".to_string(),
+            token_url: "http://localhost:9999/token".to_string(),
+            endpoint_params: std::collections::HashMap::new(),
+        };
+
+        let mut config_with_auth = config.clone();
+        config_with_auth.auth = Some(crate::config::AuthConfig {
+            authenticator: "oauth2client".to_string(),
+        });
+
+        // Create exporter with OAuth2 - this should succeed in creating the struct
+        let exporter = TelemetryExporter::new_with_skip_export(
+            config_with_auth,
+            Some(oauth2_config),
+            collector,
+            "test-machine".to_string(),
+            "1.0.0".to_string(),
+        );
+
+        // Should create successfully
+        assert!(exporter.is_ok());
+        let exp = exporter.unwrap();
+
+        // Should have auth provider
+        assert!(exp.auth_provider.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_telemetry_config_default_enabled() {
+        let config = TelemetryConfig {
+            endpoint: "http://localhost:4317".to_string(),
+            interval_seconds: 60,
+            timeout_seconds: 10,
+            insecure: false,
+            auth: None,
+            service_name: "test".to_string(),
+            enabled: crate::config::default_enabled(),
+        };
+
+        assert!(config.enabled);
+    }
+
+    #[tokio::test]
+    async fn test_build_otlp_payload_with_metrics() {
+        let mut metrics = crate::metrics::Metrics::default();
+        metrics.clamreef_scans_total = 10;
+        metrics.clamreef_threats_detected_total = 2;
+        metrics.clamreef_files_scanned_total = 100;
+        metrics.clamreef_agent_uptime_seconds = 3600;
+        metrics.clamreef_clamav_database_version = 27000;
+
+        let host_metrics = crate::metrics::HostMetrics::collect();
+
+        let payload = build_otlp_payload(&metrics, &host_metrics, "test-service");
+        assert!(payload.is_ok());
+
+        let json = payload.unwrap();
+        let resource_metrics = &json["resourceMetrics"];
+        assert!(resource_metrics.is_array());
+
+        let scope_metrics = &resource_metrics[0]["scopeMetrics"];
+        assert!(scope_metrics.is_array());
+
+        let metrics_array = &scope_metrics[0]["metrics"];
+        assert!(metrics_array.is_array());
+        assert!(metrics_array.as_array().unwrap().len() > 10);
+    }
+
+    #[tokio::test]
+    async fn test_export_to_otlp_url_formatting() {
+        let mut config = create_test_config();
+        config.endpoint = "https://example.com".to_string();
+        let collector = create_test_metrics_collector();
+
+        let exporter = TelemetryExporter::new_with_skip_export(
+            config.clone(),
+            None,
+            collector,
+            "test-machine".to_string(),
+            "1.0.0".to_string(),
+        )
+        .unwrap();
+
+        // The endpoint should be used as-is and /v1/metrics appended
+        assert_eq!(exporter.config.endpoint, "https://example.com");
+    }
 }

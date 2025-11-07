@@ -84,7 +84,7 @@ fn default_service_name() -> String {
     "clamreef".to_string()
 }
 
-fn default_enabled() -> bool {
+pub fn default_enabled() -> bool {
     true
 }
 
