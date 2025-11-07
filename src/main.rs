@@ -526,7 +526,7 @@ schedule = "0 0 * * * *"
             insecure: true,
             auth: None,
             service_name: "clamreef".to_string(),
-                enabled: true,
+            enabled: true,
         };
 
         let metrics = Arc::new(MetricsCollector::new());

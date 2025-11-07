@@ -249,14 +249,10 @@ impl TelemetryExporter {
                 .text()
                 .await
                 .unwrap_or_else(|_| "Unable to read response".to_string());
-            warn!(
-                "Failed to export metrics: HTTP {} - {}",
-                status, body
-            );
+            warn!("Failed to export metrics: HTTP {} - {}", status, body);
             Err(Error::Telemetry(format!(
                 "OTLP export failed with status {}: {}",
-                status,
-                body
+                status, body
             )))
         }
     }
@@ -308,12 +304,30 @@ fn build_otlp_payload(
     // Counter metrics
     let counters = vec![
         ("clamreef.scans.total", metrics.clamreef_scans_total),
-        ("clamreef.threats.detected.total", metrics.clamreef_threats_detected_total),
-        ("clamreef.files.scanned.total", metrics.clamreef_files_scanned_total),
-        ("clamreef.scan.errors.total", metrics.clamreef_scan_errors_total),
-        ("clamreef.rule.executions.total", metrics.clamreef_rule_executions_total),
-        ("clamreef.quarantined.files.total", metrics.clamreef_quarantined_files_total),
-        ("clamreef.cleaned.files.total", metrics.clamreef_cleaned_files_total),
+        (
+            "clamreef.threats.detected.total",
+            metrics.clamreef_threats_detected_total,
+        ),
+        (
+            "clamreef.files.scanned.total",
+            metrics.clamreef_files_scanned_total,
+        ),
+        (
+            "clamreef.scan.errors.total",
+            metrics.clamreef_scan_errors_total,
+        ),
+        (
+            "clamreef.rule.executions.total",
+            metrics.clamreef_rule_executions_total,
+        ),
+        (
+            "clamreef.quarantined.files.total",
+            metrics.clamreef_quarantined_files_total,
+        ),
+        (
+            "clamreef.cleaned.files.total",
+            metrics.clamreef_cleaned_files_total,
+        ),
     ];
 
     for (name, value) in counters {
@@ -333,14 +347,39 @@ fn build_otlp_payload(
 
     // Gauge metrics
     let gauges = vec![
-        ("clamreef.agent.uptime.seconds", metrics.clamreef_agent_uptime_seconds),
-        ("clamreef.last.scan.duration.ms", metrics.clamreef_last_scan_duration_ms),
-        ("clamreef.avg.scan.duration.ms", metrics.clamreef_avg_scan_duration_ms),
-        ("clamreef.max.scan.duration.ms", metrics.clamreef_max_scan_duration_ms),
+        (
+            "clamreef.agent.uptime.seconds",
+            metrics.clamreef_agent_uptime_seconds,
+        ),
+        (
+            "clamreef.last.scan.duration.ms",
+            metrics.clamreef_last_scan_duration_ms,
+        ),
+        (
+            "clamreef.avg.scan.duration.ms",
+            metrics.clamreef_avg_scan_duration_ms,
+        ),
+        (
+            "clamreef.max.scan.duration.ms",
+            metrics.clamreef_max_scan_duration_ms,
+        ),
         ("clamreef.pending.scans", metrics.clamreef_pending_scans),
-        ("clamreef.database.version", metrics.clamreef_clamav_database_version as u64),
-        ("clamreef.database.age.hours", metrics.clamreef_database_age_hours),
-        ("clamreef.realtime.protection.enabled", if metrics.clamreef_realtime_protection_enabled { 1 } else { 0 }),
+        (
+            "clamreef.database.version",
+            metrics.clamreef_clamav_database_version as u64,
+        ),
+        (
+            "clamreef.database.age.hours",
+            metrics.clamreef_database_age_hours,
+        ),
+        (
+            "clamreef.realtime.protection.enabled",
+            if metrics.clamreef_realtime_protection_enabled {
+                1
+            } else {
+                0
+            },
+        ),
     ];
 
     for (name, value) in gauges {
