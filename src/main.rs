@@ -329,6 +329,7 @@ mod tests {
                 insecure: false,
                 auth: None,
                 service_name: "clamreef".to_string(),
+                enabled: true,
             },
             clamav: clamreef_agent::config::ClamAVConfig {
                 socket_path: Some("/var/run/clamav/clamd.ctl".to_string()),
@@ -364,6 +365,7 @@ mod tests {
                 insecure: false,
                 auth: None,
                 service_name: "clamreef".to_string(),
+                enabled: true,
             },
             clamav: clamreef_agent::config::ClamAVConfig {
                 socket_path: None,
@@ -400,6 +402,7 @@ mod tests {
                 insecure: false,
                 auth: None,
                 service_name: "clamreef".to_string(),
+                enabled: true,
             },
             clamav: clamreef_agent::config::ClamAVConfig {
                 socket_path: None,
@@ -523,6 +526,7 @@ schedule = "0 0 * * * *"
             insecure: true,
             auth: None,
             service_name: "clamreef".to_string(),
+                enabled: true,
         };
 
         let metrics = Arc::new(MetricsCollector::new());
