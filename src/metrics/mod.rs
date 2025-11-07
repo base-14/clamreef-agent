@@ -239,6 +239,17 @@ impl MetricsCollector {
     pub async fn update_clamav_stats(&self, stats: &Stats) {
         let mut metrics = self.metrics.write().await;
         metrics.clamreef_clamav_database_version = stats.database.version;
+
+        // Calculate database age from build_time
+        // Format: "Mon Mar 13 08:20:48 2023"
+        if let Ok(db_time) = chrono::DateTime::parse_from_str(
+            &format!("{} +0000", stats.database.build_time),
+            "%a %b %d %H:%M:%S %Y %z",
+        ) {
+            let now = chrono::Utc::now();
+            let age_duration = now.signed_duration_since(db_time);
+            metrics.clamreef_database_age_hours = age_duration.num_hours().max(0) as u64;
+        }
     }
 
     pub async fn update_clamav_version(&self, version: &str) {

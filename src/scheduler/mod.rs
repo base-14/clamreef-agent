@@ -41,6 +41,13 @@ impl Scheduler {
 
         let mut handles = Vec::new();
 
+        // Spawn a task to periodically fetch ClamAV stats for metrics
+        let scheduler_clone = Arc::clone(&self);
+        let stats_handle = tokio::spawn(async move {
+            scheduler_clone.update_clamav_stats_loop().await;
+        });
+        handles.push(stats_handle);
+
         for rule in &self.rules {
             let schedule = Schedule::from_str(&rule.schedule)
                 .map_err(|e| Error::Scheduler(format!("Invalid cron expression: {}", e)))?;
@@ -61,6 +68,37 @@ impl Scheduler {
         }
 
         Ok(())
+    }
+
+    async fn update_clamav_stats_loop(self: Arc<Self>) {
+        use tokio::time::interval;
+
+        let mut interval = interval(Duration::from_secs(300)); // Every 5 minutes
+
+        loop {
+            interval.tick().await;
+
+            // Fetch ClamAV stats and update metrics
+            match self.clamav_client.stats().await {
+                Ok(stats) => {
+                    self.metrics.update_clamav_stats(&stats).await;
+                    info!("Updated ClamAV stats: DB version {}", stats.database.version);
+                }
+                Err(e) => {
+                    error!("Failed to fetch ClamAV stats: {}", e);
+                }
+            }
+
+            // Fetch ClamAV version
+            match self.clamav_client.version().await {
+                Ok(version) => {
+                    self.metrics.update_clamav_version(&version.clamav).await;
+                }
+                Err(e) => {
+                    error!("Failed to fetch ClamAV version: {}", e);
+                }
+            }
+        }
     }
 
     async fn run_rule_schedule(self: Arc<Self>, rule: ScanRule, schedule: Schedule) {
