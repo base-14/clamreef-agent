@@ -928,12 +928,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_build_otlp_payload_with_metrics() {
-        let mut metrics = crate::metrics::Metrics::default();
-        metrics.clamreef_scans_total = 10;
-        metrics.clamreef_threats_detected_total = 2;
-        metrics.clamreef_files_scanned_total = 100;
-        metrics.clamreef_agent_uptime_seconds = 3600;
-        metrics.clamreef_clamav_database_version = 27000;
+        let metrics = crate::metrics::Metrics {
+            clamreef_scans_total: 10,
+            clamreef_threats_detected_total: 2,
+            clamreef_files_scanned_total: 100,
+            clamreef_agent_uptime_seconds: 3600,
+            clamreef_clamav_database_version: 27000,
+            ..Default::default()
+        };
 
         let host_metrics = crate::metrics::HostMetrics::collect();
 
