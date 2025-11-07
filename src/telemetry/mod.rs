@@ -1,20 +1,20 @@
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::interval;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::auth::oauth2::OAuth2Client;
 use crate::auth::AuthProvider;
 use crate::config::{OAuth2ClientConfig, TelemetryConfig};
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::metrics::MetricsCollector;
 
-// Simplified telemetry exporter for now
-// TODO: Implement full OpenTelemetry integration once we get the basic version working
 pub struct TelemetryExporter {
     config: TelemetryConfig,
     metrics_collector: Arc<MetricsCollector>,
     auth_provider: Option<Arc<dyn AuthProvider>>,
+    #[cfg(test)]
+    skip_export: bool,
 }
 
 impl TelemetryExporter {
@@ -45,6 +45,39 @@ impl TelemetryExporter {
             config,
             metrics_collector,
             auth_provider,
+            #[cfg(test)]
+            skip_export: false,
+        })
+    }
+
+    #[cfg(test)]
+    pub fn new_with_skip_export(
+        config: TelemetryConfig,
+        oauth2_config: Option<OAuth2ClientConfig>,
+        metrics_collector: Arc<MetricsCollector>,
+        _machine_name: String,
+        _agent_version: String,
+    ) -> Result<Self> {
+        let auth_provider: Option<Arc<dyn AuthProvider>> = if let Some(ref auth) = config.auth {
+            if auth.authenticator == "oauth2client" {
+                if let Some(oauth2_cfg) = oauth2_config {
+                    let oauth2_client = OAuth2Client::new(oauth2_cfg)?;
+                    Some(Arc::new(oauth2_client))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        Ok(Self {
+            config,
+            metrics_collector,
+            auth_provider,
+            skip_export: true,
         })
     }
 
@@ -61,29 +94,32 @@ impl TelemetryExporter {
     }
 
     async fn export_metrics(&self) -> Result<()> {
+        // Check if telemetry export is enabled
+        if !self.config.enabled {
+            info!("Telemetry export is disabled, skipping metrics export");
+            return Ok(());
+        }
+
         // Get access token if OAuth2 is configured
-        if let Some(ref auth_provider) = self.auth_provider {
+        let auth_token = if let Some(ref auth_provider) = self.auth_provider {
             match auth_provider.get_token().await {
                 Ok(token) => {
                     info!("Successfully obtained auth token for telemetry export");
-                    // TODO: Use this token in the Authorization header when making OTLP requests
-                    // For now, just log that we have the token
-                    let _token = token; // Suppress unused variable warning
+                    Some(token)
                 }
                 Err(e) => {
                     error!("Failed to get auth token: {}", e);
                     return Err(e);
                 }
             }
-        }
+        } else {
+            None
+        };
 
         let metrics = self.metrics_collector.get_metrics().await;
         let host_metrics = self.metrics_collector.get_host_metrics().await;
 
-        // For now, just log the metrics
-        // TODO: Implement OTLP export with auth headers
-
-        // Core scanning metrics
+        // Log the metrics for visibility
         info!(
             "ClamReef Scanning - Total: {}, Threats: {}, Errors: {}, Files: {}, Pending: {}",
             metrics.clamreef_scans_total,
@@ -93,7 +129,6 @@ impl TelemetryExporter {
             metrics.clamreef_pending_scans
         );
 
-        // Performance metrics
         info!(
             "ClamReef Performance - Last Scan: {}ms, Avg: {}ms, Max: {}ms",
             metrics.clamreef_last_scan_duration_ms,
@@ -101,7 +136,6 @@ impl TelemetryExporter {
             metrics.clamreef_max_scan_duration_ms
         );
 
-        // Threat response metrics
         let last_threat = metrics
             .clamreef_last_threat_timestamp
             .map(|ts| {
@@ -124,7 +158,6 @@ impl TelemetryExporter {
             if metrics.clamreef_realtime_protection_enabled { "Enabled" } else { "Disabled" }
         );
 
-        // Host information
         info!(
             "ClamReef Host - Hostname: {}, OS: {} {}, Kernel: {}, Serial: {}",
             host_metrics.clamreef_hostname,
@@ -137,7 +170,6 @@ impl TelemetryExporter {
                 .unwrap_or(&"N/A".to_string())
         );
 
-        // User and agent info
         let users_info = if host_metrics.clamreef_users.is_empty() {
             "No interactive users".to_string()
         } else {
@@ -153,13 +185,208 @@ impl TelemetryExporter {
             metrics.clamreef_agent_uptime_seconds
         );
 
-        Ok(())
+        // Export metrics via OTLP (skip in tests if flag is set)
+        #[cfg(test)]
+        if self.skip_export {
+            return Ok(());
+        }
+
+        self.export_to_otlp(&metrics, &host_metrics, auth_token.as_deref())
+            .await
+    }
+
+    async fn export_to_otlp(
+        &self,
+        metrics: &crate::metrics::Metrics,
+        host_metrics: &crate::metrics::HostMetrics,
+        auth_token: Option<&str>,
+    ) -> Result<()> {
+        use reqwest::Client;
+
+        // Build the OTLP endpoint URL
+        let endpoint = &self.config.endpoint;
+        let otlp_url = if endpoint.ends_with("/v1/metrics") {
+            endpoint.clone()
+        } else {
+            format!("{}/v1/metrics", endpoint.trim_end_matches('/'))
+        };
+
+        info!("Exporting metrics to OTLP endpoint: {}", otlp_url);
+
+        // Build the OTLP metrics payload
+        let payload = build_otlp_payload(metrics, host_metrics, &self.config.service_name)?;
+
+        // Create HTTP client
+        let client = Client::builder()
+            .timeout(Duration::from_secs(self.config.timeout_seconds))
+            .danger_accept_invalid_certs(self.config.insecure)
+            .build()
+            .map_err(|e| Error::Telemetry(format!("Failed to create HTTP client: {}", e)))?;
+
+        // Build request
+        let mut request = client
+            .post(&otlp_url)
+            .header("Content-Type", "application/json");
+
+        // Add OAuth2 token if available
+        if let Some(token) = auth_token {
+            request = request.header("Authorization", format!("Bearer {}", token));
+        }
+
+        // Send request
+        let response = request
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|e| Error::Telemetry(format!("Failed to send OTLP request: {}", e)))?;
+
+        if response.status().is_success() {
+            info!("Successfully exported metrics to OTLP collector");
+            Ok(())
+        } else {
+            let status = response.status();
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unable to read response".to_string());
+            warn!(
+                "Failed to export metrics: HTTP {} - {}",
+                status, body
+            );
+            Err(Error::Telemetry(format!(
+                "OTLP export failed with status {}: {}",
+                status,
+                body
+            )))
+        }
     }
 
     pub async fn shutdown(&self) -> Result<()> {
         info!("Telemetry exporter shutdown");
         Ok(())
     }
+}
+
+// Helper function to build OTLP JSON payload
+fn build_otlp_payload(
+    metrics: &crate::metrics::Metrics,
+    host_metrics: &crate::metrics::HostMetrics,
+    service_name: &str,
+) -> Result<serde_json::Value> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos() as u64;
+
+    // Build resource attributes
+    let resource_attributes = vec![
+        serde_json::json!({
+            "key": "service.name",
+            "value": {"stringValue": service_name}
+        }),
+        serde_json::json!({
+            "key": "host.name",
+            "value": {"stringValue": host_metrics.clamreef_hostname}
+        }),
+        serde_json::json!({
+            "key": "os.type",
+            "value": {"stringValue": host_metrics.clamreef_os_name}
+        }),
+        serde_json::json!({
+            "key": "os.version",
+            "value": {"stringValue": host_metrics.clamreef_os_version}
+        }),
+        serde_json::json!({
+            "key": "service.version",
+            "value": {"stringValue": host_metrics.clamreef_agent_version}
+        }),
+    ];
+
+    // Build metric data points
+    let mut data_points = vec![];
+
+    // Counter metrics
+    let counters = vec![
+        ("clamreef.scans.total", metrics.clamreef_scans_total),
+        ("clamreef.threats.detected.total", metrics.clamreef_threats_detected_total),
+        ("clamreef.files.scanned.total", metrics.clamreef_files_scanned_total),
+        ("clamreef.scan.errors.total", metrics.clamreef_scan_errors_total),
+        ("clamreef.rule.executions.total", metrics.clamreef_rule_executions_total),
+        ("clamreef.quarantined.files.total", metrics.clamreef_quarantined_files_total),
+        ("clamreef.cleaned.files.total", metrics.clamreef_cleaned_files_total),
+    ];
+
+    for (name, value) in counters {
+        data_points.push(serde_json::json!({
+            "name": name,
+            "sum": {
+                "dataPoints": [{
+                    "asInt": value.to_string(),
+                    "timeUnixNano": now.to_string(),
+                    "startTimeUnixNano": now.to_string()
+                }],
+                "aggregationTemporality": 2,
+                "isMonotonic": true
+            }
+        }));
+    }
+
+    // Gauge metrics
+    let gauges = vec![
+        ("clamreef.agent.uptime.seconds", metrics.clamreef_agent_uptime_seconds),
+        ("clamreef.last.scan.duration.ms", metrics.clamreef_last_scan_duration_ms),
+        ("clamreef.avg.scan.duration.ms", metrics.clamreef_avg_scan_duration_ms),
+        ("clamreef.max.scan.duration.ms", metrics.clamreef_max_scan_duration_ms),
+        ("clamreef.pending.scans", metrics.clamreef_pending_scans),
+        ("clamreef.database.version", metrics.clamreef_clamav_database_version as u64),
+        ("clamreef.database.age.hours", metrics.clamreef_database_age_hours),
+        ("clamreef.realtime.protection.enabled", if metrics.clamreef_realtime_protection_enabled { 1 } else { 0 }),
+    ];
+
+    for (name, value) in gauges {
+        data_points.push(serde_json::json!({
+            "name": name,
+            "gauge": {
+                "dataPoints": [{
+                    "asInt": value.to_string(),
+                    "timeUnixNano": now.to_string()
+                }]
+            }
+        }));
+    }
+
+    // String attributes as labels
+    if let Some(serial) = &host_metrics.clamreef_serial_number {
+        data_points.push(serde_json::json!({
+            "name": "clamreef.host.serial",
+            "gauge": {
+                "dataPoints": [{
+                    "asInt": "0",
+                    "timeUnixNano": now.to_string(),
+                    "attributes": [{
+                        "key": "serial_number",
+                        "value": {"stringValue": serial}
+                    }]
+                }]
+            }
+        }));
+    }
+
+    // Build the complete OTLP payload
+    Ok(serde_json::json!({
+        "resourceMetrics": [{
+            "resource": {
+                "attributes": resource_attributes
+            },
+            "scopeMetrics": [{
+                "scope": {
+                    "name": "clamreef-agent",
+                    "version": host_metrics.clamreef_agent_version
+                },
+                "metrics": data_points
+            }]
+        }]
+    }))
 }
 
 #[cfg(test)]
@@ -176,6 +403,7 @@ mod tests {
             insecure: true,
             auth: None,
             service_name: "clamreef".to_string(),
+            enabled: true,
         }
     }
 
@@ -213,7 +441,7 @@ mod tests {
             .await;
         collector.update_clamav_version("0.103.8").await;
 
-        let exporter = TelemetryExporter::new(
+        let exporter = TelemetryExporter::new_with_skip_export(
             config,
             None,
             collector,
@@ -222,7 +450,7 @@ mod tests {
         )
         .unwrap();
 
-        // Test export_metrics - this should not fail even though it just logs
+        // Test export_metrics - this should not fail since we skip actual export
         let result = exporter.export_metrics().await;
         assert!(result.is_ok());
     }
@@ -242,7 +470,7 @@ mod tests {
         };
         collector.record_scan_result(&scan_result).await;
 
-        let exporter = TelemetryExporter::new(
+        let exporter = TelemetryExporter::new_with_skip_export(
             config,
             None,
             collector,
@@ -270,7 +498,7 @@ mod tests {
         };
         collector.record_scan_result(&scan_result).await;
 
-        let exporter = TelemetryExporter::new(
+        let exporter = TelemetryExporter::new_with_skip_export(
             config,
             None,
             collector,
@@ -298,7 +526,7 @@ mod tests {
         };
         collector.record_scan_result(&scan_result).await;
 
-        let exporter = TelemetryExporter::new(
+        let exporter = TelemetryExporter::new_with_skip_export(
             config,
             None,
             collector,
@@ -316,7 +544,7 @@ mod tests {
         let config = create_test_config();
         let collector = create_test_metrics_collector();
 
-        let exporter = TelemetryExporter::new(
+        let exporter = TelemetryExporter::new_with_skip_export(
             config,
             None,
             collector,
@@ -338,11 +566,12 @@ mod tests {
             insecure: true,
             auth: None,
             service_name: "clamreef".to_string(),
+            enabled: true,
         };
         let collector = create_test_metrics_collector();
 
         let exporter = Arc::new(
-            TelemetryExporter::new(
+            TelemetryExporter::new_with_skip_export(
                 config,
                 None,
                 collector,
@@ -369,12 +598,14 @@ mod tests {
             insecure: false,
             auth: None,
             service_name: "clamreef".to_string(),
+            enabled: true,
         };
 
         assert_eq!(config.endpoint, "https://otlp.example.com:4317");
         assert_eq!(config.interval_seconds, 30);
         assert_eq!(config.timeout_seconds, 15);
         assert!(!config.insecure);
+        assert!(config.enabled);
     }
 
     #[tokio::test]
@@ -406,7 +637,7 @@ mod tests {
             .record_rule_execution("test_rule", std::time::Duration::from_secs(5), 2, 1)
             .await;
 
-        let exporter = TelemetryExporter::new(
+        let exporter = TelemetryExporter::new_with_skip_export(
             config,
             None,
             collector,
@@ -456,7 +687,7 @@ mod tests {
 
         collector.update_clamav_version("1.0.2").await;
 
-        let exporter = TelemetryExporter::new(
+        let exporter = TelemetryExporter::new_with_skip_export(
             config,
             None,
             collector,
@@ -517,7 +748,7 @@ mod tests {
 
         collector.update_clamav_version("0.103.10").await;
 
-        let exporter = TelemetryExporter::new(
+        let exporter = TelemetryExporter::new_with_skip_export(
             config,
             None,
             collector,
@@ -559,7 +790,7 @@ mod tests {
             )
             .await;
 
-        let exporter = TelemetryExporter::new(
+        let exporter = TelemetryExporter::new_with_skip_export(
             config,
             None,
             collector,

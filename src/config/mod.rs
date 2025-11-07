@@ -35,6 +35,8 @@ pub struct TelemetryConfig {
     pub auth: Option<AuthConfig>,
     #[serde(default = "default_service_name")]
     pub service_name: String,
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -80,6 +82,10 @@ fn default_log_level() -> String {
 
 fn default_service_name() -> String {
     "clamreef".to_string()
+}
+
+fn default_enabled() -> bool {
+    true
 }
 
 fn default_interval() -> u64 {
@@ -449,6 +455,7 @@ schedule = "0 0 */6 * * *"
                 insecure: false,
                 auth: None,
                 service_name: "clamreef".to_string(),
+                enabled: true,
             },
             clamav: ClamAVConfig {
                 socket_path: None,
@@ -483,6 +490,7 @@ schedule = "0 0 */6 * * *"
                 insecure: false,
                 auth: None,
                 service_name: "clamreef".to_string(),
+                enabled: true,
             },
             clamav: ClamAVConfig {
                 socket_path: Some("/var/run/clamav/clamd.ctl".to_string()),
@@ -525,6 +533,7 @@ schedule = "0 0 */6 * * *"
                 insecure: false,
                 auth: None,
                 service_name: "clamreef".to_string(),
+                enabled: true,
             },
             clamav: ClamAVConfig {
                 socket_path: Some("/var/run/clamav/clamd.ctl".to_string()),
@@ -567,6 +576,7 @@ schedule = "0 0 */6 * * *"
                 insecure: false,
                 auth: None,
                 service_name: "clamreef".to_string(),
+                enabled: true,
             },
             clamav: ClamAVConfig {
                 socket_path: Some("/var/run/clamav/clamd.ctl".to_string()),
@@ -718,6 +728,7 @@ schedule = "0 0 */6 * * *"
                 insecure: true,
                 auth: None,
                 service_name: "clamreef".to_string(),
+                enabled: true,
             },
             clamav: ClamAVConfig {
                 socket_path: None,

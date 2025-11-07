@@ -4,10 +4,11 @@ version = "1.0.0"
 log_level = "info"
 
 [telemetry]
-endpoint = "http://localhost:4317"  # OTLP gRPC endpoint
+endpoint = "http://localhost:4317"  # OTLP HTTP/JSON endpoint
 interval_seconds = 60
 timeout_seconds = 10
 insecure = false
+enabled = true  # Set to false to disable metrics export
 
 [clamav]
 # Unix socket (preferred on Linux/macOS)
