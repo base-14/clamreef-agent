@@ -61,3 +61,22 @@ pub struct Version {
     pub database: u32,
     pub database_date: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FreshclamUpdate {
+    pub timestamp: DateTime<Utc>,
+    pub success: bool,
+    pub duration_seconds: f64,
+    pub databases_updated: Vec<DatabaseUpdate>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DatabaseUpdate {
+    pub name: String,
+    pub old_version: Option<u32>,
+    pub new_version: u32,
+    pub signatures: u64,
+    pub patches_downloaded: u32,
+    pub bytes_downloaded: u64,
+}

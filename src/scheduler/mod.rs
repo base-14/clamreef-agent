@@ -82,7 +82,10 @@ impl Scheduler {
             match self.clamav_client.stats().await {
                 Ok(stats) => {
                     self.metrics.update_clamav_stats(&stats).await;
-                    info!("Updated ClamAV stats: DB version {}", stats.database.version);
+                    info!(
+                        "Updated ClamAV stats: DB version {}",
+                        stats.database.version
+                    );
                 }
                 Err(e) => {
                     error!("Failed to fetch ClamAV stats: {}", e);

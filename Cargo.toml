@@ -1,6 +1,6 @@
 [package]
 name = "clamreef-agent"
-version = "0.1.0"
+version = "0.1.6"
 edition = "2021"
 authors = ["ClamReef Contributors"]
 description = "A lightweight control plane agent for ClamAV with OpenTelemetry support"

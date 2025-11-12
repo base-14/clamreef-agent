@@ -59,6 +59,7 @@ cargo clean
    - Interacts with ClamAV daemon or CLI
    - Parses STATS output for metrics
    - Manages scan operations and results
+   - Automatic database updates via freshclam with configurable scheduling
 
 2. **Authentication Module** (`src/auth/`)
    - OAuth2 client credentials flow implementation
@@ -136,6 +137,12 @@ socket_path = "/var/run/clamav/clamd.ctl"  # Unix socket
 # OR
 tcp_host = "127.0.0.1"
 tcp_port = 3310
+
+# Optional: Freshclam configuration for automatic database updates
+[freshclam]
+enabled = true  # Set to false to disable automatic updates (default: true)
+schedule = "0 0 0 * * SUN"  # Cron schedule (default: once a week on Sunday at midnight)
+reload_after_update = true  # Reload ClamAV daemon after successful update (default: true)
 
 [[rules]]
 name = "system_scan"

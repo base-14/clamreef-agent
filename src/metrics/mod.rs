@@ -5,7 +5,7 @@ use std::time::Duration;
 use sysinfo::{System, Users};
 use tokio::sync::RwLock;
 
-use crate::clamav::{ScanResult, ScanStatus, Stats};
+use crate::clamav::{FreshclamUpdate, ScanResult, ScanStatus, Stats};
 
 #[derive(Debug, Clone, Default)]
 pub struct Metrics {
@@ -29,6 +29,14 @@ pub struct Metrics {
     pub clamreef_realtime_protection_enabled: bool,
     pub clamreef_last_full_scan_timestamp: Option<u64>,
     pub clamreef_pending_scans: u64,
+    // Database update metrics
+    pub clamreef_database_updates_total: u64,
+    pub clamreef_database_updates_failed_total: u64,
+    pub clamreef_database_last_update_timestamp: Option<u64>,
+    pub clamreef_database_last_update_duration_seconds: f64,
+    pub clamreef_database_updates_count: u64,
+    pub clamreef_database_patches_downloaded_total: u64,
+    pub clamreef_database_bytes_downloaded_total: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -195,15 +203,15 @@ impl MetricsCollector {
         &self,
         _rule_name: &str,
         duration: Duration,
-        files_scanned: u64,
+        _files_scanned: u64, // Not used - already counted in record_scan_result()
         threats_found: u64,
     ) {
         let duration_ms = duration.as_millis() as u64;
 
         let mut metrics = self.metrics.write().await;
         metrics.clamreef_rule_executions_total += 1;
-        metrics.clamreef_files_scanned_total += files_scanned;
-        metrics.clamreef_threats_detected_total += threats_found;
+        // NOTE: files_scanned and threats_detected are already incremented in record_scan_result()
+        // We only track duration and timestamps here
         metrics.clamreef_last_scan_duration_ms = duration_ms;
 
         // Update max duration
@@ -255,6 +263,41 @@ impl MetricsCollector {
     pub async fn update_clamav_version(&self, version: &str) {
         let mut metrics = self.metrics.write().await;
         metrics.clamreef_clamav_engine_version = version.to_string();
+    }
+
+    pub async fn record_freshclam_update(&self, update: &FreshclamUpdate) {
+        let mut metrics = self.metrics.write().await;
+
+        if update.success {
+            metrics.clamreef_database_updates_total += 1;
+            metrics.clamreef_database_last_update_timestamp =
+                Some(update.timestamp.timestamp() as u64);
+            metrics.clamreef_database_last_update_duration_seconds = update.duration_seconds;
+
+            // Aggregate database update metrics
+            let total_databases = update.databases_updated.len() as u64;
+            let total_patches: u32 = update
+                .databases_updated
+                .iter()
+                .map(|db| db.patches_downloaded)
+                .sum();
+            let total_bytes: u64 = update
+                .databases_updated
+                .iter()
+                .map(|db| db.bytes_downloaded)
+                .sum();
+
+            metrics.clamreef_database_updates_count += total_databases;
+            metrics.clamreef_database_patches_downloaded_total += total_patches as u64;
+            metrics.clamreef_database_bytes_downloaded_total += total_bytes;
+
+            // Update database version from latest database
+            if let Some(last_db) = update.databases_updated.last() {
+                metrics.clamreef_clamav_database_version = last_db.new_version;
+            }
+        } else {
+            metrics.clamreef_database_updates_failed_total += 1;
+        }
     }
 
     pub async fn get_metrics(&self) -> Metrics {
@@ -383,14 +426,37 @@ mod tests {
     async fn test_record_rule_execution() {
         let collector = MetricsCollector::new();
 
+        // Simulate scanning 10 files with 2 threats
+        for i in 0..10 {
+            let status = if i < 2 {
+                ScanStatus::Infected
+            } else {
+                ScanStatus::Clean
+            };
+            let result = ScanResult {
+                path: format!("/test/file{}", i),
+                status,
+                scan_time: Utc::now(),
+                duration_ms: 50,
+                threat: if i < 2 {
+                    Some("Test.Virus".to_string())
+                } else {
+                    None
+                },
+            };
+            collector.record_scan_result(&result).await;
+        }
+
+        // Record the rule execution (duration tracking only)
         collector
             .record_rule_execution("test_rule", Duration::from_millis(500), 10, 2)
             .await;
 
         let metrics = collector.get_metrics().await;
         assert_eq!(metrics.clamreef_rule_executions_total, 1);
-        assert_eq!(metrics.clamreef_files_scanned_total, 10);
-        assert_eq!(metrics.clamreef_threats_detected_total, 2);
+        assert_eq!(metrics.clamreef_files_scanned_total, 10); // Counted from record_scan_result
+        assert_eq!(metrics.clamreef_scans_total, 10); // All scans completed
+        assert_eq!(metrics.clamreef_threats_detected_total, 2); // Counted from record_scan_result
         assert_eq!(metrics.clamreef_last_scan_duration_ms, 500);
         assert_eq!(metrics.clamreef_avg_scan_duration_ms, 500);
         assert_eq!(metrics.clamreef_max_scan_duration_ms, 500);
@@ -417,6 +483,122 @@ mod tests {
         assert_eq!(metrics.clamreef_avg_scan_duration_ms, 200); // (100+200+300)/3
         assert_eq!(metrics.clamreef_max_scan_duration_ms, 300);
         assert_eq!(metrics.clamreef_rule_executions_total, 3);
+    }
+
+    #[tokio::test]
+    async fn test_record_freshclam_update_success() {
+        use crate::clamav::{DatabaseUpdate, FreshclamUpdate};
+
+        let collector = MetricsCollector::new();
+
+        let update = FreshclamUpdate {
+            timestamp: Utc::now(),
+            success: true,
+            duration_seconds: 5.5,
+            databases_updated: vec![
+                DatabaseUpdate {
+                    name: "daily.cld".to_string(),
+                    old_version: Some(27815),
+                    new_version: 27819,
+                    signatures: 2077025,
+                    patches_downloaded: 4,
+                    bytes_downloaded: 10_000,
+                },
+                DatabaseUpdate {
+                    name: "main.cvd".to_string(),
+                    old_version: None,
+                    new_version: 62,
+                    signatures: 6647427,
+                    patches_downloaded: 0,
+                    bytes_downloaded: 0,
+                },
+            ],
+            error: None,
+        };
+
+        collector.record_freshclam_update(&update).await;
+
+        let metrics = collector.get_metrics().await;
+        assert_eq!(metrics.clamreef_database_updates_total, 1);
+        assert_eq!(metrics.clamreef_database_updates_failed_total, 0);
+        assert_eq!(metrics.clamreef_database_updates_count, 2);
+        assert_eq!(metrics.clamreef_database_patches_downloaded_total, 4);
+        assert_eq!(metrics.clamreef_database_bytes_downloaded_total, 10_000);
+        assert_eq!(metrics.clamreef_database_last_update_duration_seconds, 5.5);
+        assert!(metrics.clamreef_database_last_update_timestamp.is_some());
+        assert_eq!(metrics.clamreef_clamav_database_version, 62); // Last database version
+    }
+
+    #[tokio::test]
+    async fn test_record_freshclam_update_failure() {
+        use crate::clamav::FreshclamUpdate;
+
+        let collector = MetricsCollector::new();
+
+        let update = FreshclamUpdate {
+            timestamp: Utc::now(),
+            success: false,
+            duration_seconds: 1.0,
+            databases_updated: vec![],
+            error: Some("Connection failed".to_string()),
+        };
+
+        collector.record_freshclam_update(&update).await;
+
+        let metrics = collector.get_metrics().await;
+        assert_eq!(metrics.clamreef_database_updates_total, 0);
+        assert_eq!(metrics.clamreef_database_updates_failed_total, 1);
+        assert_eq!(metrics.clamreef_database_updates_count, 0);
+    }
+
+    #[tokio::test]
+    async fn test_record_freshclam_multiple_updates() {
+        use crate::clamav::{DatabaseUpdate, FreshclamUpdate};
+
+        let collector = MetricsCollector::new();
+
+        // First update
+        let update1 = FreshclamUpdate {
+            timestamp: Utc::now(),
+            success: true,
+            duration_seconds: 3.0,
+            databases_updated: vec![DatabaseUpdate {
+                name: "daily.cld".to_string(),
+                old_version: Some(100),
+                new_version: 101,
+                signatures: 1000,
+                patches_downloaded: 1,
+                bytes_downloaded: 5000,
+            }],
+            error: None,
+        };
+
+        collector.record_freshclam_update(&update1).await;
+
+        // Second update
+        let update2 = FreshclamUpdate {
+            timestamp: Utc::now(),
+            success: true,
+            duration_seconds: 4.0,
+            databases_updated: vec![DatabaseUpdate {
+                name: "daily.cld".to_string(),
+                old_version: Some(101),
+                new_version: 102,
+                signatures: 1100,
+                patches_downloaded: 2,
+                bytes_downloaded: 8000,
+            }],
+            error: None,
+        };
+
+        collector.record_freshclam_update(&update2).await;
+
+        let metrics = collector.get_metrics().await;
+        assert_eq!(metrics.clamreef_database_updates_total, 2);
+        assert_eq!(metrics.clamreef_database_updates_count, 2);
+        assert_eq!(metrics.clamreef_database_patches_downloaded_total, 3); // 1 + 2
+        assert_eq!(metrics.clamreef_database_bytes_downloaded_total, 13_000); // 5000 + 8000
+        assert_eq!(metrics.clamreef_database_last_update_duration_seconds, 4.0);
     }
 
     #[tokio::test]

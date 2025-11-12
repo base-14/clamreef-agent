@@ -12,6 +12,8 @@ pub struct Config {
     pub rules: Vec<ScanRule>,
     #[serde(default)]
     pub oauth2client: Option<OAuth2ClientConfig>,
+    #[serde(default)]
+    pub freshclam: Option<FreshclamConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -76,6 +78,16 @@ pub struct ScanRule {
     pub follow_symlinks: bool,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct FreshclamConfig {
+    #[serde(default = "default_freshclam_enabled")]
+    pub enabled: bool,
+    #[serde(default = "default_freshclam_schedule")]
+    pub schedule: String,
+    #[serde(default = "default_reload_after_update")]
+    pub reload_after_update: bool,
+}
+
 fn default_log_level() -> String {
     "info".to_string()
 }
@@ -101,6 +113,18 @@ fn default_scan_timeout() -> u64 {
 }
 
 fn default_recursive() -> bool {
+    true
+}
+
+fn default_freshclam_enabled() -> bool {
+    true
+}
+
+fn default_freshclam_schedule() -> String {
+    "0 0 0 * * SUN".to_string() // Once a week on Sunday at midnight
+}
+
+fn default_reload_after_update() -> bool {
     true
 }
 
@@ -177,6 +201,19 @@ impl Config {
                         ));
                     }
                 }
+            }
+        }
+
+        // Validate freshclam configuration
+        if let Some(ref freshclam) = self.freshclam {
+            if freshclam.enabled {
+                // Validate cron expression
+                cron::Schedule::from_str(&freshclam.schedule).map_err(|e| {
+                    Error::Config(format!(
+                        "Invalid freshclam cron expression '{}': {}",
+                        freshclam.schedule, e
+                    ))
+                })?;
             }
         }
 
@@ -465,6 +502,7 @@ schedule = "0 0 */6 * * *"
             },
             rules: vec![],
             oauth2client: None,
+            freshclam: None,
         };
 
         let result = config.validate();
@@ -508,6 +546,7 @@ schedule = "0 0 */6 * * *"
                 follow_symlinks: false,
             }],
             oauth2client: None,
+            freshclam: None,
         };
 
         let result = config.validate();
@@ -551,6 +590,7 @@ schedule = "0 0 */6 * * *"
                 follow_symlinks: false,
             }],
             oauth2client: None,
+            freshclam: None,
         };
 
         let result = config.validate();
@@ -586,6 +626,7 @@ schedule = "0 0 */6 * * *"
             },
             rules: vec![],
             oauth2client: None,
+            freshclam: None,
         };
 
         assert_eq!(config.get_machine_name(), "custom-machine");
@@ -600,6 +641,7 @@ schedule = "0 0 */6 * * *"
             clamav: config.clamav.clone(),
             rules: config.rules.clone(),
             oauth2client: config.oauth2client.clone(),
+            freshclam: config.freshclam.clone(),
         };
 
         // Should return hostname or "unknown"
@@ -746,6 +788,7 @@ schedule = "0 0 */6 * * *"
                 follow_symlinks: false,
             }],
             oauth2client: None,
+            freshclam: None,
         };
 
         let result = config.validate();
@@ -795,6 +838,125 @@ schedule = "0 0 */6 * * *"
         );
     }
 
+    #[test]
+    fn test_freshclam_config_defaults() {
+        assert!(default_freshclam_enabled());
+        assert_eq!(default_freshclam_schedule(), "0 0 0 * * SUN");
+        assert!(default_reload_after_update());
+    }
+
+    #[test]
+    fn test_config_validate_freshclam_cron() {
+        let config = Config {
+            agent: AgentConfig {
+                version: "1.0.0".to_string(),
+                machine_name: None,
+                log_level: "info".to_string(),
+            },
+            telemetry: TelemetryConfig {
+                endpoint: "http://localhost:4317".to_string(),
+                interval_seconds: 60,
+                timeout_seconds: 10,
+                insecure: false,
+                auth: None,
+                service_name: "clamreef".to_string(),
+                enabled: true,
+            },
+            clamav: ClamAVConfig {
+                socket_path: Some("/var/run/clamav/clamd.ctl".to_string()),
+                tcp_host: None,
+                tcp_port: None,
+                scan_timeout_seconds: 300,
+            },
+            rules: vec![],
+            oauth2client: None,
+            freshclam: Some(FreshclamConfig {
+                enabled: true,
+                schedule: "invalid cron".to_string(),
+                reload_after_update: true,
+            }),
+        };
+
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid freshclam cron expression"));
+    }
+
+    #[test]
+    fn test_config_with_freshclam_disabled() {
+        let config = Config {
+            agent: AgentConfig {
+                version: "1.0.0".to_string(),
+                machine_name: None,
+                log_level: "info".to_string(),
+            },
+            telemetry: TelemetryConfig {
+                endpoint: "http://localhost:4317".to_string(),
+                interval_seconds: 60,
+                timeout_seconds: 10,
+                insecure: false,
+                auth: None,
+                service_name: "clamreef".to_string(),
+                enabled: true,
+            },
+            clamav: ClamAVConfig {
+                socket_path: Some("/var/run/clamav/clamd.ctl".to_string()),
+                tcp_host: None,
+                tcp_port: None,
+                scan_timeout_seconds: 300,
+            },
+            rules: vec![],
+            oauth2client: None,
+            freshclam: Some(FreshclamConfig {
+                enabled: false,
+                schedule: "invalid".to_string(), // Should not be validated when disabled
+                reload_after_update: true,
+            }),
+        };
+
+        let result = config.validate();
+        assert!(result.is_ok()); // Should pass because freshclam is disabled
+    }
+
+    #[tokio::test]
+    async fn test_config_load_with_freshclam() {
+        use std::io::Write;
+        let mut temp_file = NamedTempFile::new().unwrap();
+        let config_toml = r#"
+[agent]
+version = "1.0.0"
+
+[telemetry]
+endpoint = "http://localhost:4317"
+
+[clamav]
+socket_path = "/var/run/clamav/clamd.ctl"
+
+[freshclam]
+enabled = true
+schedule = "0 0 0 * * SUN"
+reload_after_update = true
+
+[[rules]]
+name = "test"
+paths = ["/tmp"]
+schedule = "0 0 */6 * * *"
+"#;
+        temp_file.write_all(config_toml.as_bytes()).unwrap();
+        temp_file.flush().unwrap();
+
+        let config = Config::load(temp_file.path()).await.unwrap();
+
+        assert!(config.freshclam.is_some());
+        let freshclam = config.freshclam.unwrap();
+        assert!(freshclam.enabled);
+        assert_eq!(freshclam.schedule, "0 0 0 * * SUN");
+        assert!(freshclam.reload_after_update);
+    }
+
     #[tokio::test]
     async fn test_load_from_default_locations_not_found() {
         use std::env;
@@ -839,5 +1001,211 @@ schedule = "0 0 */6 * * *"
             Ok(config) => env::set_var("XDG_CONFIG_HOME", config),
             Err(_) => env::remove_var("XDG_CONFIG_HOME"),
         }
+    }
+
+    #[test]
+    fn test_config_validate_oauth2_missing_config() {
+        let config = Config {
+            agent: AgentConfig {
+                version: "1.0.0".to_string(),
+                machine_name: None,
+                log_level: "info".to_string(),
+            },
+            telemetry: TelemetryConfig {
+                endpoint: "http://localhost:4317".to_string(),
+                interval_seconds: 60,
+                timeout_seconds: 10,
+                insecure: false,
+                auth: Some(AuthConfig {
+                    authenticator: "oauth2client".to_string(),
+                }),
+                service_name: "clamreef".to_string(),
+                enabled: true,
+            },
+            clamav: ClamAVConfig {
+                socket_path: Some("/var/run/clamav/clamd.ctl".to_string()),
+                tcp_host: None,
+                tcp_port: None,
+                scan_timeout_seconds: 300,
+            },
+            rules: vec![],
+            oauth2client: None, // Missing oauth2client config
+            freshclam: None,
+        };
+
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("oauth2client configuration is missing"));
+    }
+
+    #[test]
+    fn test_config_validate_oauth2_empty_client_id() {
+        let config = Config {
+            agent: AgentConfig {
+                version: "1.0.0".to_string(),
+                machine_name: None,
+                log_level: "info".to_string(),
+            },
+            telemetry: TelemetryConfig {
+                endpoint: "http://localhost:4317".to_string(),
+                interval_seconds: 60,
+                timeout_seconds: 10,
+                insecure: false,
+                auth: Some(AuthConfig {
+                    authenticator: "oauth2client".to_string(),
+                }),
+                service_name: "clamreef".to_string(),
+                enabled: true,
+            },
+            clamav: ClamAVConfig {
+                socket_path: Some("/var/run/clamav/clamd.ctl".to_string()),
+                tcp_host: None,
+                tcp_port: None,
+                scan_timeout_seconds: 300,
+            },
+            rules: vec![],
+            oauth2client: Some(OAuth2ClientConfig {
+                client_id: "".to_string(), // Empty client_id
+                client_secret: "secret".to_string(),
+                token_url: "https://example.com/token".to_string(),
+                endpoint_params: Default::default(),
+            }),
+            freshclam: None,
+        };
+
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("client_id cannot be empty"));
+    }
+
+    #[test]
+    fn test_config_validate_oauth2_empty_client_secret() {
+        let config = Config {
+            agent: AgentConfig {
+                version: "1.0.0".to_string(),
+                machine_name: None,
+                log_level: "info".to_string(),
+            },
+            telemetry: TelemetryConfig {
+                endpoint: "http://localhost:4317".to_string(),
+                interval_seconds: 60,
+                timeout_seconds: 10,
+                insecure: false,
+                auth: Some(AuthConfig {
+                    authenticator: "oauth2client".to_string(),
+                }),
+                service_name: "clamreef".to_string(),
+                enabled: true,
+            },
+            clamav: ClamAVConfig {
+                socket_path: Some("/var/run/clamav/clamd.ctl".to_string()),
+                tcp_host: None,
+                tcp_port: None,
+                scan_timeout_seconds: 300,
+            },
+            rules: vec![],
+            oauth2client: Some(OAuth2ClientConfig {
+                client_id: "client-id".to_string(),
+                client_secret: "".to_string(), // Empty client_secret
+                token_url: "https://example.com/token".to_string(),
+                endpoint_params: Default::default(),
+            }),
+            freshclam: None,
+        };
+
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("client_secret cannot be empty"));
+    }
+
+    #[test]
+    fn test_config_validate_oauth2_empty_token_url() {
+        let config = Config {
+            agent: AgentConfig {
+                version: "1.0.0".to_string(),
+                machine_name: None,
+                log_level: "info".to_string(),
+            },
+            telemetry: TelemetryConfig {
+                endpoint: "http://localhost:4317".to_string(),
+                interval_seconds: 60,
+                timeout_seconds: 10,
+                insecure: false,
+                auth: Some(AuthConfig {
+                    authenticator: "oauth2client".to_string(),
+                }),
+                service_name: "clamreef".to_string(),
+                enabled: true,
+            },
+            clamav: ClamAVConfig {
+                socket_path: Some("/var/run/clamav/clamd.ctl".to_string()),
+                tcp_host: None,
+                tcp_port: None,
+                scan_timeout_seconds: 300,
+            },
+            rules: vec![],
+            oauth2client: Some(OAuth2ClientConfig {
+                client_id: "client-id".to_string(),
+                client_secret: "secret".to_string(),
+                token_url: "".to_string(), // Empty token_url
+                endpoint_params: Default::default(),
+            }),
+            freshclam: None,
+        };
+
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("token_url cannot be empty"));
+    }
+
+    #[test]
+    fn test_config_validate_oauth2_valid() {
+        let config = Config {
+            agent: AgentConfig {
+                version: "1.0.0".to_string(),
+                machine_name: None,
+                log_level: "info".to_string(),
+            },
+            telemetry: TelemetryConfig {
+                endpoint: "http://localhost:4317".to_string(),
+                interval_seconds: 60,
+                timeout_seconds: 10,
+                insecure: false,
+                auth: Some(AuthConfig {
+                    authenticator: "oauth2client".to_string(),
+                }),
+                service_name: "clamreef".to_string(),
+                enabled: true,
+            },
+            clamav: ClamAVConfig {
+                socket_path: Some("/var/run/clamav/clamd.ctl".to_string()),
+                tcp_host: None,
+                tcp_port: None,
+                scan_timeout_seconds: 300,
+            },
+            rules: vec![],
+            oauth2client: Some(OAuth2ClientConfig {
+                client_id: "client-id".to_string(),
+                client_secret: "secret".to_string(),
+                token_url: "https://example.com/token".to_string(),
+                endpoint_params: Default::default(),
+            }),
+            freshclam: None,
+        };
+
+        let result = config.validate();
+        assert!(result.is_ok());
     }
 }

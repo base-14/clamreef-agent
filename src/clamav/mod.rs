@@ -3,4 +3,4 @@ pub mod parser;
 pub mod types;
 
 pub use client::{ClamAVClient, ClamAVClientImpl, ClamAVConnection};
-pub use types::{ScanResult, ScanStatus, Stats, Version};
+pub use types::{DatabaseUpdate, FreshclamUpdate, ScanResult, ScanStatus, Stats, Version};

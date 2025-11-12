@@ -2,7 +2,8 @@ use chrono::Utc;
 use regex::Regex;
 
 use super::types::{
-    DatabaseInfo, MemoryStats, QueueStats, ScanResult, ScanStatus, Stats, ThreadStats, Version,
+    DatabaseInfo, DatabaseUpdate, FreshclamUpdate, MemoryStats, QueueStats, ScanResult, ScanStatus,
+    Stats, ThreadStats, Version,
 };
 use crate::error::{Error, Result};
 
@@ -151,6 +152,138 @@ impl Parser {
             duration_ms,
             threat,
         })
+    }
+
+    pub fn parse_freshclam_output(output: &str, duration_seconds: f64) -> FreshclamUpdate {
+        let mut databases_updated = Vec::new();
+        let mut old_version: Option<u32> = None;
+        let mut patches_downloaded = 0;
+        let mut total_bytes = 0u64;
+
+        let mut success = false;
+        let mut error_msg: Option<String> = None;
+
+        for line in output.lines() {
+            let line = line.trim();
+
+            // Check for database availability
+            // "daily database available for update (local version: 27815, remote version: 27819)"
+            if line.contains("database available for update") {
+                // Extract old version
+                if let Some(start) = line.find("local version: ") {
+                    let version_str = &line[start + 15..];
+                    if let Some(end) = version_str.find(',') {
+                        if let Ok(v) = version_str[..end].parse::<u32>() {
+                            old_version = Some(v);
+                        }
+                    }
+                }
+            }
+
+            // Check for patch downloads
+            if line.contains("Downloading database patch") {
+                patches_downloaded += 1;
+            }
+
+            // Parse download sizes from progress bars
+            // "Time:    0.1s, ETA:    0.0s [========================>]    1.38KiB/1.38KiB"
+            if line.contains("KiB/") || line.contains("MiB/") || line.contains("GiB/") {
+                if let Some(size_part) = line.split_whitespace().last() {
+                    if let Some(size_str) = size_part.split('/').next() {
+                        if let Some(bytes) = Self::parse_byte_size(size_str) {
+                            total_bytes += bytes;
+                        }
+                    }
+                }
+            }
+
+            // Parse database update completion
+            // "daily.cld updated (version: 27819, sigs: 2077025, f-level: 90, builder: svc.clamav-publisher)"
+            if line.contains("updated (version:")
+                || line.contains("database is up-to-date (version:")
+            {
+                let db_name = line
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("unknown")
+                    .to_string();
+
+                let mut new_version = 0;
+                let mut signatures = 0;
+
+                // Extract version
+                if let Some(start) = line.find("version: ") {
+                    let version_str = &line[start + 9..];
+                    if let Some(end) = version_str.find(',') {
+                        if let Ok(v) = version_str[..end].parse::<u32>() {
+                            new_version = v;
+                        }
+                    }
+                }
+
+                // Extract signatures
+                if let Some(start) = line.find("sigs: ") {
+                    let sigs_str = &line[start + 6..];
+                    if let Some(end) = sigs_str.find(',') {
+                        if let Ok(s) = sigs_str[..end].parse::<u64>() {
+                            signatures = s;
+                        }
+                    }
+                }
+
+                databases_updated.push(DatabaseUpdate {
+                    name: db_name,
+                    old_version,
+                    new_version,
+                    signatures,
+                    patches_downloaded,
+                    bytes_downloaded: total_bytes,
+                });
+
+                // Reset for next database
+                old_version = None;
+                patches_downloaded = 0;
+                total_bytes = 0;
+                success = true;
+            }
+
+            // Check for errors
+            if line.starts_with("ERROR:") && !line.contains("NULL X509 store") {
+                // Ignore SSL cert warnings (NULL X509 store)
+                error_msg = Some(line[6..].trim().to_string());
+            }
+        }
+
+        FreshclamUpdate {
+            timestamp: Utc::now(),
+            success,
+            duration_seconds,
+            databases_updated,
+            error: error_msg,
+        }
+    }
+
+    fn parse_byte_size(size_str: &str) -> Option<u64> {
+        let size_str = size_str.trim();
+
+        if let Some(kib_pos) = size_str.find("KiB") {
+            let num_str = &size_str[..kib_pos];
+            if let Ok(num) = num_str.parse::<f64>() {
+                return Some((num * 1024.0) as u64);
+            }
+        } else if let Some(mib_pos) = size_str.find("MiB") {
+            let num_str = &size_str[..mib_pos];
+            if let Ok(num) = num_str.parse::<f64>() {
+                return Some((num * 1024.0 * 1024.0) as u64);
+            }
+        } else if let Some(gib_pos) = size_str.find("GiB") {
+            let num_str = &size_str[..gib_pos];
+            if let Ok(num) = num_str.parse::<f64>() {
+                return Some((num * 1024.0 * 1024.0 * 1024.0) as u64);
+            }
+        }
+
+        None
     }
 }
 
@@ -403,5 +536,76 @@ STATE: END
         let stats = Parser::parse_stats(response).unwrap();
         assert_eq!(stats.pools, 1);
         assert_eq!(stats.state, "READY"); // "END" state gets converted to "READY"
+    }
+
+    #[test]
+    fn test_parse_freshclam_output() {
+        let output = r#"ClamAV update process started at Tue Nov 11 18:32:10 2025
+daily database available for update (local version: 27815, remote version: 27819)
+Current database is 4 versions behind.
+Downloading database patch # 27816...
+Time:    0.1s, ETA:    0.0s [========================>]    1.38KiB/1.38KiB
+Downloading database patch # 27817...
+Time:    0.1s, ETA:    0.0s [========================>]    3.98KiB/3.98KiB
+Downloading database patch # 27818...
+Time:    0.1s, ETA:    0.0s [========================>]    2.54KiB/2.54KiB
+Downloading database patch # 27819...
+Time:    0.1s, ETA:    0.0s [========================>]    2.58KiB/2.58KiB
+Testing database: '/opt/homebrew/var/lib/clamav/tmp.46b8f89e76/daily.cld' ...
+Database test passed.
+daily.cld updated (version: 27819, sigs: 2077025, f-level: 90, builder: svc.clamav-publisher)
+main.cvd database is up-to-date (version: 62, sigs: 6647427, f-level: 90, builder: sigmgr)
+bytecode.cvd database is up-to-date (version: 339, sigs: 80, f-level: 90, builder: nrandolp)"#;
+
+        let update = Parser::parse_freshclam_output(output, 5.2);
+
+        assert!(update.success);
+        assert_eq!(update.duration_seconds, 5.2);
+        assert_eq!(update.databases_updated.len(), 3);
+        assert!(update.error.is_none());
+
+        // Check daily database update
+        let daily = &update.databases_updated[0];
+        assert_eq!(daily.name, "daily.cld");
+        assert_eq!(daily.old_version, Some(27815));
+        assert_eq!(daily.new_version, 27819);
+        assert_eq!(daily.signatures, 2077025);
+        assert_eq!(daily.patches_downloaded, 4);
+        // Total bytes: 1.38 + 3.98 + 2.54 + 2.58 = 10.48 KiB
+        assert!(daily.bytes_downloaded > 10_000 && daily.bytes_downloaded < 11_000);
+
+        // Check main database (up-to-date)
+        let main = &update.databases_updated[1];
+        assert_eq!(main.name, "main.cvd");
+        assert_eq!(main.old_version, None);
+        assert_eq!(main.new_version, 62);
+        assert_eq!(main.signatures, 6647427);
+
+        // Check bytecode database (up-to-date)
+        let bytecode = &update.databases_updated[2];
+        assert_eq!(bytecode.name, "bytecode.cvd");
+        assert_eq!(bytecode.new_version, 339);
+        assert_eq!(bytecode.signatures, 80);
+    }
+
+    #[test]
+    fn test_parse_freshclam_output_with_error() {
+        let output = r#"ClamAV update process started at Tue Nov 11 18:32:10 2025
+ERROR: Connection failed
+daily database available for update (local version: 27815, remote version: 27819)"#;
+
+        let update = Parser::parse_freshclam_output(output, 1.0);
+
+        assert!(!update.success);
+        assert_eq!(update.error, Some("Connection failed".to_string()));
+        assert_eq!(update.databases_updated.len(), 0);
+    }
+
+    #[test]
+    fn test_parse_byte_size() {
+        assert_eq!(Parser::parse_byte_size("1.38KiB"), Some(1413));
+        assert_eq!(Parser::parse_byte_size("10.5MiB"), Some(11_010_048));
+        assert_eq!(Parser::parse_byte_size("2.5GiB"), Some(2_684_354_560));
+        assert_eq!(Parser::parse_byte_size("invalid"), None);
     }
 }

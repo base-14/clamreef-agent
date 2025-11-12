@@ -328,6 +328,26 @@ fn build_otlp_payload(
             "clamreef.cleaned.files.total",
             metrics.clamreef_cleaned_files_total,
         ),
+        (
+            "clamreef.database.updates.total",
+            metrics.clamreef_database_updates_total,
+        ),
+        (
+            "clamreef.database.updates.failed.total",
+            metrics.clamreef_database_updates_failed_total,
+        ),
+        (
+            "clamreef.database.updates.count",
+            metrics.clamreef_database_updates_count,
+        ),
+        (
+            "clamreef.database.patches.downloaded.total",
+            metrics.clamreef_database_patches_downloaded_total,
+        ),
+        (
+            "clamreef.database.bytes.downloaded.total",
+            metrics.clamreef_database_bytes_downloaded_total,
+        ),
     ];
 
     for (name, value) in counters {
@@ -394,6 +414,37 @@ fn build_otlp_payload(
         }));
     }
 
+    // Optional timestamp metrics
+    if let Some(timestamp) = metrics.clamreef_database_last_update_timestamp {
+        data_points.push(serde_json::json!({
+            "name": "clamreef.database.last.update.timestamp",
+            "gauge": {
+                "dataPoints": [{
+                    "asInt": timestamp.to_string(),
+                    "timeUnixNano": now.to_string()
+                }]
+            }
+        }));
+    }
+
+    // Float metrics (duration)
+    let float_gauges = vec![(
+        "clamreef.database.last.update.duration.seconds",
+        metrics.clamreef_database_last_update_duration_seconds,
+    )];
+
+    for (name, value) in float_gauges {
+        data_points.push(serde_json::json!({
+            "name": name,
+            "gauge": {
+                "dataPoints": [{
+                    "asDouble": value,
+                    "timeUnixNano": now.to_string()
+                }]
+            }
+        }));
+    }
+
     // String attributes as labels
     if let Some(serial) = &host_metrics.clamreef_serial_number {
         data_points.push(serde_json::json!({
@@ -431,6 +482,7 @@ fn build_otlp_payload(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::AuthConfig;
     use std::time::Duration;
     use tokio::time::timeout;
 
@@ -971,5 +1023,207 @@ mod tests {
 
         // The endpoint should be used as-is and /v1/metrics appended
         assert_eq!(exporter.config.endpoint, "https://example.com");
+    }
+
+    #[tokio::test]
+    async fn test_build_otlp_payload_with_database_update_metrics() {
+        let metrics = crate::metrics::Metrics {
+            clamreef_database_updates_total: 5,
+            clamreef_database_updates_failed_total: 1,
+            clamreef_database_last_update_timestamp: Some(1699000000),
+            clamreef_database_last_update_duration_seconds: 3.5,
+            clamreef_database_updates_count: 3,
+            clamreef_database_patches_downloaded_total: 10,
+            clamreef_database_bytes_downloaded_total: 50000,
+            ..Default::default()
+        };
+
+        let host_metrics = crate::metrics::HostMetrics::collect();
+
+        let payload = build_otlp_payload(&metrics, &host_metrics, "test-service");
+        assert!(payload.is_ok());
+
+        let json = payload.unwrap();
+        let scope_metrics = &json["resourceMetrics"][0]["scopeMetrics"][0]["metrics"];
+        assert!(scope_metrics.is_array());
+
+        // Verify database update metrics are present
+        let metrics_array = scope_metrics.as_array().unwrap();
+        let has_updates_total = metrics_array
+            .iter()
+            .any(|m| m["name"] == "clamreef.database.updates.total");
+        let has_update_timestamp = metrics_array
+            .iter()
+            .any(|m| m["name"] == "clamreef.database.last.update.timestamp");
+        let has_update_duration = metrics_array
+            .iter()
+            .any(|m| m["name"] == "clamreef.database.last.update.duration.seconds");
+
+        assert!(has_updates_total);
+        assert!(has_update_timestamp);
+        assert!(has_update_duration);
+    }
+
+    #[tokio::test]
+    async fn test_build_otlp_payload_without_optional_timestamp() {
+        let metrics = crate::metrics::Metrics {
+            clamreef_database_last_update_timestamp: None,
+            ..Default::default()
+        };
+
+        let host_metrics = crate::metrics::HostMetrics::collect();
+
+        let payload = build_otlp_payload(&metrics, &host_metrics, "test-service");
+        assert!(payload.is_ok());
+
+        let json = payload.unwrap();
+        let scope_metrics = &json["resourceMetrics"][0]["scopeMetrics"][0]["metrics"];
+
+        // Timestamp metric should not be present
+        let metrics_array = scope_metrics.as_array().unwrap();
+        let has_update_timestamp = metrics_array
+            .iter()
+            .any(|m| m["name"] == "clamreef.database.last.update.timestamp");
+
+        assert!(!has_update_timestamp);
+    }
+
+    #[tokio::test]
+    async fn test_build_otlp_payload_with_host_serial() {
+        let metrics = crate::metrics::Metrics::default();
+        let mut host_metrics = crate::metrics::HostMetrics::collect();
+        host_metrics.clamreef_serial_number = Some("TEST-SERIAL-123".to_string());
+
+        let payload = build_otlp_payload(&metrics, &host_metrics, "test-service");
+        assert!(payload.is_ok());
+
+        let json = payload.unwrap();
+        let scope_metrics = &json["resourceMetrics"][0]["scopeMetrics"][0]["metrics"];
+
+        // Serial metric should be present
+        let metrics_array = scope_metrics.as_array().unwrap();
+        let has_serial = metrics_array
+            .iter()
+            .any(|m| m["name"] == "clamreef.host.serial");
+
+        assert!(has_serial);
+    }
+
+    #[tokio::test]
+    async fn test_export_metrics_with_database_updates() {
+        let config = create_test_config();
+        let collector = Arc::new(crate::metrics::MetricsCollector::new());
+
+        // Record a database update
+        let update = crate::clamav::FreshclamUpdate {
+            timestamp: chrono::Utc::now(),
+            success: true,
+            duration_seconds: 2.5,
+            databases_updated: vec![crate::clamav::DatabaseUpdate {
+                name: "daily.cld".to_string(),
+                old_version: Some(100),
+                new_version: 101,
+                signatures: 1000,
+                patches_downloaded: 1,
+                bytes_downloaded: 5000,
+            }],
+            error: None,
+        };
+        collector.record_freshclam_update(&update).await;
+
+        let exporter = TelemetryExporter::new_with_skip_export(
+            config,
+            None,
+            collector,
+            "test-machine".to_string(),
+            "1.0.0".to_string(),
+        )
+        .unwrap();
+
+        let result = exporter.export_metrics().await;
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_telemetry_exporter_without_auth() {
+        let metrics = Arc::new(MetricsCollector::new());
+        let config = TelemetryConfig {
+            endpoint: "http://localhost:4317".to_string(),
+            interval_seconds: 60,
+            timeout_seconds: 10,
+            insecure: false,
+            auth: None, // No auth configured
+            service_name: "clamreef".to_string(),
+            enabled: true,
+        };
+
+        let exporter = TelemetryExporter::new(
+            config,
+            None,
+            metrics,
+            "test-host".to_string(),
+            "0.1.0".to_string(),
+        );
+
+        assert!(exporter.is_ok());
+        let exporter = exporter.unwrap();
+        assert!(exporter.auth_provider.is_none());
+    }
+
+    #[test]
+    fn test_telemetry_exporter_with_non_oauth2_auth() {
+        let metrics = Arc::new(MetricsCollector::new());
+        let config = TelemetryConfig {
+            endpoint: "http://localhost:4317".to_string(),
+            interval_seconds: 60,
+            timeout_seconds: 10,
+            insecure: false,
+            auth: Some(AuthConfig {
+                authenticator: "other-auth-method".to_string(), // Non-oauth2 authenticator
+            }),
+            service_name: "clamreef".to_string(),
+            enabled: true,
+        };
+
+        let exporter = TelemetryExporter::new(
+            config,
+            None,
+            metrics,
+            "test-host".to_string(),
+            "0.1.0".to_string(),
+        );
+
+        assert!(exporter.is_ok());
+        let exporter = exporter.unwrap();
+        assert!(exporter.auth_provider.is_none());
+    }
+
+    #[test]
+    fn test_telemetry_exporter_oauth2_without_config() {
+        let metrics = Arc::new(MetricsCollector::new());
+        let config = TelemetryConfig {
+            endpoint: "http://localhost:4317".to_string(),
+            interval_seconds: 60,
+            timeout_seconds: 10,
+            insecure: false,
+            auth: Some(AuthConfig {
+                authenticator: "oauth2client".to_string(),
+            }),
+            service_name: "clamreef".to_string(),
+            enabled: true,
+        };
+
+        // OAuth2 authenticator specified but no oauth2_config provided
+        let exporter = TelemetryExporter::new(
+            config,
+            None,
+            metrics,
+            "test-host".to_string(),
+            "0.1.0".to_string(),
+        );
+
+        assert!(exporter.is_ok());
+        let exporter = exporter.unwrap();
+        assert!(exporter.auth_provider.is_none());
     }
 }

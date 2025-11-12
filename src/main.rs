@@ -80,9 +80,92 @@ pub async fn load_config_from_args(args: &Args) -> Result<Config> {
     }
 }
 
+pub async fn run_freshclam_schedule(
+    schedule: String,
+    reload_after_update: bool,
+    client: Arc<ClamAVClientImpl>,
+    metrics: Arc<clamreef_agent::metrics::MetricsCollector>,
+) {
+    use cron::Schedule;
+    use std::str::FromStr;
+    use tokio::time::{interval, Duration};
+
+    let cron_schedule = match Schedule::from_str(&schedule) {
+        Ok(s) => s,
+        Err(e) => {
+            error!("Invalid freshclam cron expression '{}': {}", schedule, e);
+            return;
+        }
+    };
+
+    let mut interval = interval(Duration::from_secs(60)); // Check every minute
+
+    loop {
+        interval.tick().await;
+
+        let now = chrono::Utc::now();
+        let next = cron_schedule.upcoming(chrono::Utc).next();
+
+        if let Some(next_time) = next {
+            if next_time.timestamp() - now.timestamp() < 60 {
+                info!("Running freshclam to update ClamAV database");
+
+                match ClamAVClientImpl::update_database().await {
+                    Ok(update) => {
+                        if update.success {
+                            info!(
+                                "Database update successful in {:.2}s: {} databases updated",
+                                update.duration_seconds,
+                                update.databases_updated.len()
+                            );
+
+                            // Log details for each database
+                            for db in &update.databases_updated {
+                                info!(
+                                    "  {} updated from {:?} to {} ({} signatures, {} patches, {:.2} KiB)",
+                                    db.name,
+                                    db.old_version,
+                                    db.new_version,
+                                    db.signatures,
+                                    db.patches_downloaded,
+                                    db.bytes_downloaded as f64 / 1024.0
+                                );
+                            }
+
+                            if reload_after_update {
+                                info!("Reloading ClamAV daemon to apply updates");
+                                match client.reload().await {
+                                    Ok(()) => {
+                                        info!("ClamAV daemon reloaded successfully");
+                                    }
+                                    Err(e) => {
+                                        error!("Failed to reload ClamAV daemon: {}", e);
+                                    }
+                                }
+                            }
+                        } else {
+                            warn!("Database update completed but no databases were updated");
+                            if let Some(err) = &update.error {
+                                error!("Update error: {}", err);
+                            }
+                        }
+
+                        // Record metrics regardless of success/failure
+                        metrics.record_freshclam_update(&update).await;
+                    }
+                    Err(e) => {
+                        error!("Database update failed: {}", e);
+                    }
+                }
+            }
+        }
+    }
+}
+
 pub async fn shutdown_gracefully(
     telemetry_handle: tokio::task::JoinHandle<()>,
     scheduler_handle: tokio::task::JoinHandle<()>,
+    freshclam_handle: Option<tokio::task::JoinHandle<()>>,
     telemetry_exporter: Arc<TelemetryExporter>,
 ) -> Result<()> {
     info!("Shutting down...");
@@ -90,6 +173,9 @@ pub async fn shutdown_gracefully(
     // Cancel tasks
     telemetry_handle.abort();
     scheduler_handle.abort();
+    if let Some(handle) = freshclam_handle {
+        handle.abort();
+    }
 
     // Shutdown telemetry
     if let Err(e) = telemetry_exporter.shutdown().await {
@@ -168,6 +254,29 @@ async fn main() -> Result<()> {
         })
     };
 
+    // Start freshclam updater if enabled
+    let freshclam_handle = if let Some(ref freshclam_config) = config.freshclam {
+        if freshclam_config.enabled {
+            info!(
+                "Starting freshclam updater with schedule: {}",
+                freshclam_config.schedule
+            );
+            let schedule = freshclam_config.schedule.clone();
+            let reload_after = freshclam_config.reload_after_update;
+            let client = Arc::clone(&clamav_client);
+            let metrics = Arc::clone(&metrics_collector);
+            Some(tokio::spawn(async move {
+                run_freshclam_schedule(schedule, reload_after, client, metrics).await;
+            }))
+        } else {
+            info!("Freshclam updater disabled");
+            None
+        }
+    } else {
+        info!("No freshclam configuration found, skipping database updates");
+        None
+    };
+
     info!(
         "ClamReef Agent started successfully with {} rules",
         config.rules.len()
@@ -184,7 +293,13 @@ async fn main() -> Result<()> {
     }
 
     // Graceful shutdown
-    shutdown_gracefully(telemetry_handle, scheduler_handle, telemetry_exporter).await?;
+    shutdown_gracefully(
+        telemetry_handle,
+        scheduler_handle,
+        freshclam_handle,
+        telemetry_exporter,
+    )
+    .await?;
 
     Ok(())
 }
@@ -339,6 +454,7 @@ mod tests {
             },
             rules: vec![],
             oauth2client: None,
+            freshclam: None,
         };
 
         let connection = create_clamav_connection(&config).unwrap();
@@ -375,6 +491,7 @@ mod tests {
             },
             rules: vec![],
             oauth2client: None,
+            freshclam: None,
         };
 
         let connection = create_clamav_connection(&config).unwrap();
@@ -412,6 +529,7 @@ mod tests {
             },
             rules: vec![],
             oauth2client: None,
+            freshclam: None,
         };
 
         let result = create_clamav_connection(&config);
@@ -550,7 +668,7 @@ schedule = "0 0 * * * *"
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         });
 
-        let result = shutdown_gracefully(telemetry_handle, scheduler_handle, exporter).await;
+        let result = shutdown_gracefully(telemetry_handle, scheduler_handle, None, exporter).await;
         assert!(result.is_ok());
     }
 

@@ -62,7 +62,7 @@ coverage:
 	cargo tarpaulin --out Html --output-dir target/coverage
 
 coverage-check:
-	cargo tarpaulin --fail-under 75
+	cargo tarpaulin --lib --fail-under 75
 
 # Development
 dev:

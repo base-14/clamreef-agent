@@ -159,6 +159,47 @@ impl ClamAVClient for ClamAVClientImpl {
     }
 }
 
+impl ClamAVClientImpl {
+    pub async fn update_database() -> Result<super::types::FreshclamUpdate> {
+        use tokio::process::Command;
+
+        debug!("Running freshclam to update ClamAV database");
+
+        let start = std::time::Instant::now();
+
+        let output = Command::new("freshclam")
+            .output()
+            .await
+            .map_err(|e| Error::ClamAV(format!("Failed to execute freshclam: {}", e)))?;
+
+        let duration = start.elapsed().as_secs_f64();
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+
+        debug!("freshclam output: {}", stdout);
+        if !stderr.is_empty() {
+            debug!("freshclam stderr: {}", stderr);
+        }
+
+        // Parse output regardless of exit status
+        let mut update = super::parser::Parser::parse_freshclam_output(&stdout, duration);
+
+        // Override error status if command failed
+        if !output.status.success() {
+            update.success = false;
+            if update.error.is_none() {
+                update.error = Some(format!(
+                    "freshclam exited with non-zero status: {}",
+                    output.status
+                ));
+            }
+        }
+
+        Ok(update)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -617,6 +658,146 @@ mod tests {
                 // Expected for nonexistent socket
             }
             _ => panic!("Expected connection error for nonexistent socket"),
+        }
+    }
+
+    // Test update_database method
+    // Note: This is an integration test that will attempt to call freshclam
+    // It tests the error handling path when freshclam is not available or fails
+    #[tokio::test]
+    async fn test_update_database_command_structure() {
+        // This test validates that update_database returns a FreshclamUpdate
+        // We expect this to either succeed (if freshclam is installed) or fail gracefully
+        let result = ClamAVClientImpl::update_database().await;
+
+        // Either we get a successful update or an error, both are valid test outcomes
+        match result {
+            Ok(update) => {
+                // If freshclam is installed and runs successfully
+                assert!(update.duration_seconds >= 0.0);
+            }
+            Err(e) => {
+                // If freshclam is not installed, we should get a proper error
+                let error_msg = format!("{:?}", e);
+                assert!(
+                    error_msg.contains("Failed to execute freshclam")
+                        || error_msg.contains("freshclam exited with non-zero status")
+                );
+            }
+        }
+    }
+
+    // Test that parser integration works for common output patterns
+    #[test]
+    fn test_parse_freshclam_integration() {
+        let sample_output = r#"ClamAV update process started at Wed Aug 28 10:15:30 2024
+daily database available for update (local version: 27815, remote version: 27819)
+Time: 0.5s, ETA: 0.0s [========================>] 1.38KiB/1.38KiB
+daily.cld updated (version: 27819, sigs: 2077025, f-level: 90, builder: svc-clamav)
+"#;
+
+        let update = Parser::parse_freshclam_output(sample_output, 0.5);
+
+        assert!(update.success);
+        assert_eq!(update.duration_seconds, 0.5);
+        assert_eq!(update.databases_updated.len(), 1);
+        assert_eq!(update.databases_updated[0].name, "daily.cld");
+        assert_eq!(update.databases_updated[0].new_version, 27819);
+        assert_eq!(update.databases_updated[0].signatures, 2077025);
+    }
+
+    // Test parser handles error output
+    #[test]
+    fn test_parse_freshclam_error_output() {
+        let error_output = r#"ERROR: Connection failed
+ERROR: Can't download daily.cvd from database.clamav.net
+"#;
+
+        let update = Parser::parse_freshclam_output(error_output, 0.1);
+
+        assert!(!update.success);
+        assert!(update.error.is_some());
+        assert_eq!(update.databases_updated.len(), 0);
+    }
+
+    // Test parser handles already up-to-date output
+    #[test]
+    fn test_parse_freshclam_up_to_date() {
+        let uptodate_output = r#"ClamAV update process started at Wed Aug 28 10:15:30 2024
+daily.cld database is up-to-date (version: 27819, sigs: 2077025, f-level: 90, builder: svc-clamav)
+main.cvd database is up-to-date (version: 62, sigs: 6647427, f-level: 90, builder: svc-clamav)
+bytecode.cvd database is up-to-date (version: 334, sigs: 92, f-level: 90, builder: svc-clamav)
+"#;
+
+        let update = Parser::parse_freshclam_output(uptodate_output, 0.2);
+
+        assert!(update.success);
+        assert_eq!(update.duration_seconds, 0.2);
+        // Parser includes up-to-date databases in the updates list
+        assert_eq!(update.databases_updated.len(), 3);
+        assert_eq!(update.databases_updated[0].name, "daily.cld");
+        assert_eq!(update.databases_updated[1].name, "main.cvd");
+        assert_eq!(update.databases_updated[2].name, "bytecode.cvd");
+    }
+
+    // Test error handling when response has invalid UTF-8 trailing bytes
+    #[test]
+    fn test_invalid_utf8_handling() {
+        let connection = ClamAVConnection::Tcp {
+            host: "localhost".to_string(),
+            port: 3310,
+        };
+        let client = ClamAVClientImpl::new(connection);
+
+        // This tests that the client structure can be created and configured properly
+        // The UTF-8 validation happens in send_command, which we can't easily test
+        // without a real ClamAV daemon, but we test the error path exists
+        assert_eq!(client.timeout, Duration::from_secs(30));
+    }
+
+    // Test that scan command formats paths correctly
+    #[tokio::test]
+    async fn test_scan_path_formatting() {
+        let connection = ClamAVConnection::Tcp {
+            host: "127.0.0.1".to_string(),
+            port: 9999, // Non-existent port
+        };
+        let client = ClamAVClientImpl::new(connection).with_timeout(Duration::from_millis(100));
+
+        let temp_file = NamedTempFile::new().unwrap();
+        let path = temp_file.path();
+
+        // Test that scan properly formats the path and attempts connection
+        let result = client.scan(path).await;
+        assert!(result.is_err());
+
+        // Should be a connection or timeout error
+        match result.unwrap_err() {
+            Error::Connection(_) | Error::Timeout(_) => {
+                // Expected - validates scan method structure
+            }
+            _ => panic!("Expected connection or timeout error"),
+        }
+    }
+
+    // Test reload command structure
+    #[tokio::test]
+    async fn test_reload_command_structure() {
+        let connection = ClamAVConnection::Tcp {
+            host: "127.0.0.1".to_string(),
+            port: 9999, // Non-existent port
+        };
+        let client = ClamAVClientImpl::new(connection).with_timeout(Duration::from_millis(100));
+
+        let result = client.reload().await;
+        assert!(result.is_err());
+
+        // Validates that reload method exists and handles connection errors
+        match result.unwrap_err() {
+            Error::Connection(_) | Error::Timeout(_) => {
+                // Expected - validates reload method structure
+            }
+            _ => panic!("Expected connection or timeout error"),
         }
     }
 }

@@ -18,6 +18,12 @@ socket_path = "/var/run/clamav/clamd.ctl"
 # tcp_port = 3310
 scan_timeout_seconds = 300
 
+# Freshclam configuration for automatic database updates
+[freshclam]
+enabled = true  # Set to false to disable automatic updates
+schedule = "0 0 0 * * SUN"  # Once a week on Sunday at midnight (cron format)
+reload_after_update = true  # Reload ClamAV daemon after successful update
+
 # Scan rules with cron-like scheduling
 [[rules]]
 name = "system_binaries"
