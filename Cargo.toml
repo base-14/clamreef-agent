@@ -31,10 +31,10 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 clap = { version = "4.4", features = ["derive", "env"] }
 
 # OpenTelemetry
-opentelemetry = { version = "0.21", features = ["metrics"] }
-opentelemetry-otlp = { version = "0.14", features = ["tls", "grpc-tonic", "metrics"] }
-opentelemetry_sdk = { version = "0.21", features = ["rt-tokio", "metrics"] }
-opentelemetry-semantic-conventions = "0.13"
+opentelemetry = { version = "0.31", features = ["metrics"] }
+opentelemetry-otlp = { version = "0.31", features = ["tls", "grpc-tonic", "metrics"] }
+opentelemetry_sdk = { version = "0.31", features = ["rt-tokio", "metrics"] }
+opentelemetry-semantic-conventions = "0.31"
 
 # Scheduling
 cron = "0.12"
