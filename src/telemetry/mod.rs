@@ -445,6 +445,31 @@ fn build_otlp_payload(
         }));
     }
 
+    // Optional timestamp metrics
+    if let Some(timestamp) = metrics.clamreef_last_threat_timestamp {
+        data_points.push(serde_json::json!({
+            "name": "clamreef.last.threat.timestamp",
+            "gauge": {
+                "dataPoints": [{
+                    "asInt": timestamp.to_string(),
+                    "timeUnixNano": now.to_string()
+                }]
+            }
+        }));
+    }
+
+    if let Some(timestamp) = metrics.clamreef_last_full_scan_timestamp {
+        data_points.push(serde_json::json!({
+            "name": "clamreef.last.full.scan.timestamp",
+            "gauge": {
+                "dataPoints": [{
+                    "asInt": timestamp.to_string(),
+                    "timeUnixNano": now.to_string()
+                }]
+            }
+        }));
+    }
+
     // String attributes as labels
     if let Some(serial) = &host_metrics.clamreef_serial_number {
         data_points.push(serde_json::json!({
@@ -456,6 +481,113 @@ fn build_otlp_payload(
                     "attributes": [{
                         "key": "serial_number",
                         "value": {"stringValue": serial}
+                    }]
+                }]
+            }
+        }));
+    }
+
+    // ClamAV engine version as string attribute
+    data_points.push(serde_json::json!({
+        "name": "clamreef.clamav.engine.version",
+        "gauge": {
+            "dataPoints": [{
+                "asInt": "0",
+                "timeUnixNano": now.to_string(),
+                "attributes": [{
+                    "key": "version",
+                    "value": {"stringValue": metrics.clamreef_clamav_engine_version}
+                }]
+            }]
+        }
+    }));
+
+    // Hostname as string attribute
+    data_points.push(serde_json::json!({
+        "name": "clamreef.hostname",
+        "gauge": {
+            "dataPoints": [{
+                "asInt": "0",
+                "timeUnixNano": now.to_string(),
+                "attributes": [{
+                    "key": "hostname",
+                    "value": {"stringValue": host_metrics.clamreef_hostname}
+                }]
+            }]
+        }
+    }));
+
+    // OS name as string attribute
+    data_points.push(serde_json::json!({
+        "name": "clamreef.os.name",
+        "gauge": {
+            "dataPoints": [{
+                "asInt": "0",
+                "timeUnixNano": now.to_string(),
+                "attributes": [{
+                    "key": "os_name",
+                    "value": {"stringValue": host_metrics.clamreef_os_name}
+                }]
+            }]
+        }
+    }));
+
+    // OS version as string attribute
+    data_points.push(serde_json::json!({
+        "name": "clamreef.os.version",
+        "gauge": {
+            "dataPoints": [{
+                "asInt": "0",
+                "timeUnixNano": now.to_string(),
+                "attributes": [{
+                    "key": "os_version",
+                    "value": {"stringValue": host_metrics.clamreef_os_version}
+                }]
+            }]
+        }
+    }));
+
+    // Kernel version as string attribute
+    data_points.push(serde_json::json!({
+        "name": "clamreef.kernel.version",
+        "gauge": {
+            "dataPoints": [{
+                "asInt": "0",
+                "timeUnixNano": now.to_string(),
+                "attributes": [{
+                    "key": "kernel_version",
+                    "value": {"stringValue": host_metrics.clamreef_kernel_version}
+                }]
+            }]
+        }
+    }));
+
+    // Agent version as string attribute
+    data_points.push(serde_json::json!({
+        "name": "clamreef.agent.version",
+        "gauge": {
+            "dataPoints": [{
+                "asInt": "0",
+                "timeUnixNano": now.to_string(),
+                "attributes": [{
+                    "key": "agent_version",
+                    "value": {"stringValue": host_metrics.clamreef_agent_version}
+                }]
+            }]
+        }
+    }));
+
+    // Users as string attribute (joined)
+    if !host_metrics.clamreef_users.is_empty() {
+        data_points.push(serde_json::json!({
+            "name": "clamreef.users",
+            "gauge": {
+                "dataPoints": [{
+                    "asInt": host_metrics.clamreef_users.len().to_string(),
+                    "timeUnixNano": now.to_string(),
+                    "attributes": [{
+                        "key": "users",
+                        "value": {"stringValue": host_metrics.clamreef_users.join(",")}
                     }]
                 }]
             }

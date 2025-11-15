@@ -86,6 +86,8 @@ pub struct FreshclamConfig {
     pub schedule: String,
     #[serde(default = "default_reload_after_update")]
     pub reload_after_update: bool,
+    #[serde(default = "default_freshclam_path")]
+    pub path: String,
 }
 
 fn default_log_level() -> String {
@@ -126,6 +128,10 @@ fn default_freshclam_schedule() -> String {
 
 fn default_reload_after_update() -> bool {
     true
+}
+
+fn default_freshclam_path() -> String {
+    "freshclam".to_string() // Try PATH first, can be overridden with full path
 }
 
 impl Config {
@@ -874,6 +880,7 @@ schedule = "0 0 */6 * * *"
                 enabled: true,
                 schedule: "invalid cron".to_string(),
                 reload_after_update: true,
+                path: "freshclam".to_string(),
             }),
         };
 
@@ -914,6 +921,7 @@ schedule = "0 0 */6 * * *"
                 enabled: false,
                 schedule: "invalid".to_string(), // Should not be validated when disabled
                 reload_after_update: true,
+                path: "freshclam".to_string(),
             }),
         };
 

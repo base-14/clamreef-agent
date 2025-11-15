@@ -160,14 +160,14 @@ impl ClamAVClient for ClamAVClientImpl {
 }
 
 impl ClamAVClientImpl {
-    pub async fn update_database() -> Result<super::types::FreshclamUpdate> {
+    pub async fn update_database(freshclam_path: &str) -> Result<super::types::FreshclamUpdate> {
         use tokio::process::Command;
 
-        debug!("Running freshclam to update ClamAV database");
+        debug!("Running freshclam to update ClamAV database using: {}", freshclam_path);
 
         let start = std::time::Instant::now();
 
-        let output = Command::new("freshclam")
+        let output = Command::new(freshclam_path)
             .output()
             .await
             .map_err(|e| Error::ClamAV(format!("Failed to execute freshclam: {}", e)))?;
@@ -668,7 +668,7 @@ mod tests {
     async fn test_update_database_command_structure() {
         // This test validates that update_database returns a FreshclamUpdate
         // We expect this to either succeed (if freshclam is installed) or fail gracefully
-        let result = ClamAVClientImpl::update_database().await;
+        let result = ClamAVClientImpl::update_database("freshclam").await;
 
         // Either we get a successful update or an error, both are valid test outcomes
         match result {

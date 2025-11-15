@@ -83,6 +83,7 @@ pub async fn load_config_from_args(args: &Args) -> Result<Config> {
 pub async fn run_freshclam_schedule(
     schedule: String,
     reload_after_update: bool,
+    freshclam_path: String,
     client: Arc<ClamAVClientImpl>,
     metrics: Arc<clamreef_agent::metrics::MetricsCollector>,
 ) {
@@ -110,7 +111,7 @@ pub async fn run_freshclam_schedule(
             if next_time.timestamp() - now.timestamp() < 60 {
                 info!("Running freshclam to update ClamAV database");
 
-                match ClamAVClientImpl::update_database().await {
+                match ClamAVClientImpl::update_database(&freshclam_path).await {
                     Ok(update) => {
                         if update.success {
                             info!(
@@ -263,10 +264,11 @@ async fn main() -> Result<()> {
             );
             let schedule = freshclam_config.schedule.clone();
             let reload_after = freshclam_config.reload_after_update;
+            let freshclam_path = freshclam_config.path.clone();
             let client = Arc::clone(&clamav_client);
             let metrics = Arc::clone(&metrics_collector);
             Some(tokio::spawn(async move {
-                run_freshclam_schedule(schedule, reload_after, client, metrics).await;
+                run_freshclam_schedule(schedule, reload_after, freshclam_path, client, metrics).await;
             }))
         } else {
             info!("Freshclam updater disabled");

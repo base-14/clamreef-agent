@@ -39,6 +39,7 @@ scan_timeout_seconds = 300
 enabled = true  # Set to false to disable automatic updates
 schedule = "0 0 0 * * SUN"  # Once a week on Sunday at midnight (cron format)
 reload_after_update = true  # Reload ClamAV daemon after successful update
+path = "freshclam"  # Path to freshclam binary (default: "freshclam" from PATH, or specify full path like "/usr/bin/freshclam")
 
 # Scan rules
 [[rules]]
