@@ -163,7 +163,10 @@ impl ClamAVClientImpl {
     pub async fn update_database(freshclam_path: &str) -> Result<super::types::FreshclamUpdate> {
         use tokio::process::Command;
 
-        debug!("Running freshclam to update ClamAV database using: {}", freshclam_path);
+        debug!(
+            "Running freshclam to update ClamAV database using: {}",
+            freshclam_path
+        );
 
         let start = std::time::Instant::now();
 

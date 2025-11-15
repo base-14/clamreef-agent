@@ -268,7 +268,8 @@ async fn main() -> Result<()> {
             let client = Arc::clone(&clamav_client);
             let metrics = Arc::clone(&metrics_collector);
             Some(tokio::spawn(async move {
-                run_freshclam_schedule(schedule, reload_after, freshclam_path, client, metrics).await;
+                run_freshclam_schedule(schedule, reload_after, freshclam_path, client, metrics)
+                    .await;
             }))
         } else {
             info!("Freshclam updater disabled");
