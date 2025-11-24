@@ -52,7 +52,7 @@ reqwest = { version = "0.11", default-features = false, features = ["json", "rus
 
 # System info
 sysinfo = "0.30"
-hostname = "0.3"
+hostname = "0.4"
 
 # File watching for config reload
 notify = "6.1"
